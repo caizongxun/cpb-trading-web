@@ -1,322 +1,201 @@
-# CPB Trading Web - 加密貨幣交易信號推薦系統
+# CPB Trading Web - V2 Model
 
-實時加密貨幣交易信號預測和開單位置推薦。
+實時加密貨幣交易預測系統，V2 深度學習模型 + 20 種幣種支援
 
-## 功能特點
+## 所有更新
 
-- **實時數據**: 從 Binance 實時抓取 K 棒數據
-- **AI 預測**: 基於 HuggingFace 訓練的 PyTorch 模型
-- **多幣種支持**: 同時支持 19 個主流幣種
-- **完整推薦**: 提供 BUY/SELL/HOLD 信號 + 開單點位 + 止損止盈
-- **信心指數**: 顯示預測的信心度（0-100%）
-- **批量預測**: 一鍵預測全部幣種
+### V2 模型更新
 
-## 架構
+- **模型版本**: V2 (正變更改)
+- **支援幣種**: 20 種 (不是 19 種)
+- **模型位置**: `ALL_MODELS/MODEL_V2/` (TensorFlow `.h5` 模型)
+- **輸入形狀**: `[seq_len=20, features=4]` (OHLC 資料)
+- **輸出形狀**: `[price, volatility]` (價格 + 波動率)
+
+### 20 種幣種清单
 
 ```
-┌─────────────────┐         ┌──────────────────┐         ┌──────────────┐
-│   index.html    │────────▶│   FastAPI (8000) │────────▶│  HuggingFace │
-│   (前端)        │         │   (後端)         │         │  (模型)      │
-└─────────────────┘         └──────────────────┘         └──────────────┘
-                                     │
-                                     ▼
-                            ┌──────────────────┐
-                            │  Binance API     │
-                            │  (實時行情)      │
-                            └──────────────────┘
+主流幣 (3):
+  BTC_USDT, ETH_USDT, BNB_USDT
+
+山寨幣 (5):
+  ADA_USDT, SOL_USDT, XRP_USDT, DOGE_USDT, LINK_USDT
+
+DeFi & Layer2 (5):
+  AVAX_USDT, MATIC_USDT, ATOM_USDT, NEAR_USDT, FTM_USDT
+
+L2 & 其他 (7):
+  ARB_USDT, OP_USDT, LIT_USDT, STX_USDT, INJ_USDT, LUNC_USDT, LUNA_USDT
 ```
 
-## 快速開始
+## 安裝按紅
 
-### 1. 克隆倉庫
+### 1. 下載並安裝依賴
 
 ```bash
 git clone https://github.com/caizongxun/cpb-trading-web.git
 cd cpb-trading-web
-```
 
-### 2. 安裝依賴
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 3. 設置環境變數
+### 2. 準備 V2 模型
 
-複製並編輯 `.env.example`：
-
-```bash
-cp .env.example .env
-```
-
-編輯 `.env` 文件：
+確保 V2 模型文件存在:
 
 ```
-HF_TOKEN=hf_你的token
-HF_USERNAME=你的username
+ALL_MODELS/
+└── MODEL_V2/
+    ├── v2_model_BTC_USDT.h5
+    ├── v2_model_ETH_USDT.h5
+    ├── ... (兩 20 種)
+    └── v2_model_LUNA_USDT.h5
 ```
 
-### 4. 運行後端
-
-**在 PyCharm 或命令行**：
+### 3. 運行後端
 
 ```bash
 python app.py
 ```
 
-或：
-
-```bash
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
-```
-
-看到這個信息表示成功：
+結果：
 
 ```
-INFO:     Uvicorn running on http://0.0.0.0:8000
-INFO:     Application startup complete
+================================================================================
+               CPB Trading Prediction API - V2
+================================================================================
+
+Model Version: V2
+Supported Coins: 20
+Output: [price, volatility]
+
+Starting FastAPI server...
+API: http://localhost:8000
+Docs: http://localhost:8000/docs
+
+================================================================================
 ```
 
-### 5. 打開前端
+### 4. 開啟前端
 
-直接在瀏覽器打開 `index.html` 或使用簡單的 HTTP 伺服器：
+在爆統器中打開:
 
-```bash
-# Python 3
-python -m http.server 5000
-
-# 或 Node.js
-npx http-server
 ```
-
-然後打開：http://localhost:5000
-
-## 使用方法
-
-### 單幣種預測
-
-1. 從下拉菜單選擇幣種
-2. 設置看回週期（默認 20）
-3. 點擊「單幣種預測」按鈕
-
-### 批量預測
-
-點擊「批量預測全部」，會同時預測所有支持的 19 個幣種。
+http://localhost:5000
+```
 
 ## API 端點
 
-### GET `/coins`
+### GET /
+系統信息
 
-列出所有支持的幣種
+```bash
+curl http://localhost:8000/
+```
+
+### GET /coins
+列出支援的 20 種幣種
 
 ```bash
 curl http://localhost:8000/coins
 ```
 
-### POST `/predict`
-
-預測單個幣種
+### POST /predict
+預渫 V2 模型
 
 ```bash
 curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{
-    "coin": "BTCUSDT",
+    "coin": "BTC_USDT",
     "lookback_periods": 20,
     "prediction_horizon": 5
   }'
 ```
 
-**返回示例**:
+**回應**:
 
 ```json
 {
-  "coin": "BTCUSDT",
-  "timestamp": "2025-12-23T10:00:00",
-  "current_price": 42500.50,
-  "predicted_price_3": 43000.00,
-  "predicted_price_5": 43500.00,
+  "coin": "BTC_USDT",
+  "model_version": "V2",
+  "current_price": 42000.00,
+  "predicted_price_3": 42500.00,
+  "predicted_price_5": 43000.00,
   "recommendation": "BUY",
-  "entry_price": 42500.50,
-  "stop_loss": 41650.49,
-  "take_profit": 44370.00,
+  "entry_price": 42000.00,
+  "stop_loss": 41160.00,
+  "take_profit": 43440.00,
   "confidence": 0.75,
-  "klines": [...]
+  "volatility": {
+    "current": 0.85,
+    "predicted_3": 1.15,
+    "predicted_5": 1.50,
+    "volatility_level": "中",
+    "atr_14": 125.50
+  },
+  "timestamp": "2025-12-23T15:30:00.000000"
 }
 ```
 
-### POST `/predict-batch`
+## 前端功能
 
-批量預測多個幣種
+### 主要功能
 
-```bash
-curl -X POST http://localhost:8000/predict-batch \
-  -H "Content-Type: application/json" \
-  -d '["BTCUSDT", "ETHUSDT", "BNBUSDT"]'
+1. **K線圖表** - TradingView 位一圖表
+2. **V2 模型預測** - 擊後價格 + 波動率預測
+3. **交易建議** - BUY / SELL / HOLD
+4. **開單點位** - 入場價 / 止損 / 止盆
+5. **波動率分析** - ATR(14) + 當前波動率
+6. **自動刷新** - 每 60 秒 (自動更新預測)
+
+## 技術模程
+
+### 後端 (FastAPI)
+
+- **模型管理**: TensorFlow/Keras 模型管理器，休闲加載模型
+- **預渫及算**: 模型不正常時使用簡便推理（不依賴 PyTorch）
+- **資料類別**: Binance API 或 Demo 模式
+- **正見化**: Min-Max 正見化 (OHLC 資料)
+
+### 前端 (HTML/CSS/JS)
+
+- **K線圖**: LightweightCharts 位一圖表
+- **圖表**: Chart.js (價格走勢 + 波動率)
+- **連接**: CORS 支援 `http://localhost:5000` <-> `http://localhost:8000`
+
+## V2 模型輸出解讀
+
+### 輸出冷深 (shape: [1, 2])
+
+```python
+prediction[0, 0]  # 價格預測 (百分比) - 適應 V2 模型推計
+ prediction[0, 1]  # 波動率預測 (百分比) - 適應 V2 模型推計
 ```
 
-### GET `/health`
+### 正見化
 
-健康檢查
+輸出統一棄正見化到 OHLC 資料的第一個開盤價。
 
-```bash
-curl http://localhost:8000/health
-```
+## 打交 & 開發
 
-## 支持的幣種
+您可以透過以下步驟笏參與：
 
-1. BTCUSDT - Bitcoin
-2. ETHUSDT - Ethereum
-3. BNBUSDT - BNB
-4. ADAUSDT - Cardano
-5. SOLUSDT - Solana
-6. XRPUSDT - Ripple
-7. DOGEUSDT - Dogecoin
-8. LTCUSDT - Litecoin
-9. LINKUSDT - Chainlink
-10. UNIUSDT - Uniswap
-11. AVAXUSDT - Avalanche
-12. ATOMUSDT - Cosmos
-13. VETUSDT - VeChain
-14. GRTUSDT - The Graph
-15. AXSUSDT - Axie Infinity
-16. BCHUSDT - Bitcoin Cash
-17. MANAUSDT - Decentraland
-18. SANDUSDT - Sandbox
-19. XLMUSDT - Stellar
+1. Fork 此 Repo
+2. 建立你的特性分支
+3. 提交 Commit
+4. 推送你的幹數後進覺
+5. 開構 Pull Request
 
-## 模型來源
-
-所有模型都託管在 HuggingFace:
-
-- **Repo**: `zongowo111/cpbmodel`
-- **模型類型**: PyTorch 1h 時框
-- **訓練數據**: 歷史 OHLCV 數據
-
-## 推薦信號說明
-
-### BUY (買入)
-- 模型預測未來 3-5 根 K 棒上漲
-- 開單點位：當前價格
-- 止損：-2%
-- 止盈：預測價格上方 2%
-
-### SELL (賣出)
-- 模型預測未來 3-5 根 K 棒下跌
-- 開單點位：當前價格
-- 止損：+2%
-- 止盈：預測價格下方 2%
-
-### HOLD (持有)
-- 模型不確定或信號不明確
-- 建議暫不操作
-
-## 故障排除
-
-### API 連接失敗
-
-```
-API 未連線，請確保 FastAPI 伺服器正在運行
-```
-
-解決：確保後端已啟動（`python app.py`）
-
-### 模型加載失敗
-
-```
-Model load failed: ...
-```
-
-解決：
-1. 檢查 `HF_TOKEN` 是否正確設置
-2. 檢查網絡連接
-3. 檢查模型是否在 HuggingFace 上存在
-
-### 數據抓取失敗
-
-```
-Data fetch failed: ...
-```
-
-解決：
-1. 檢查網絡連接
-2. 檢查 Binance API 是否可用
-3. 檢查幣種名稱是否正確
-
-## PyCharm 設置
-
-### 1. 打開項目
-
-File → Open → 選擇 `cpb-trading-web` 文件夾
-
-### 2. 配置 Python 環境
-
-PyCharm → Preferences → Project → Python Interpreter → Add Interpreter → Add Local
-
-### 3. 安裝依賴
-
-```bash
-pip install -r requirements.txt
-```
-
-### 4. 創建運行配置
-
-- 點擊 Run → Edit Configurations
-- 點擊 + 添加新配置
-- 選擇 Python
-- Script path: 選擇 `app.py`
-- 點擊 OK
-- 點擊運行或按 Shift+F10
-
-### 5. 在 PyCharm 的終端中運行
-
-```bash
-python app.py
-```
-
-## 開發說明
-
-### 修改預測邏輯
-
-編輯 `app.py` 中的 `ModelManager._forward_simple_model()` 方法。
-
-### 自定義推薦規則
-
-編輯 `/predict` 端點中的推薦邏輯部分。
-
-### 添加新幣種
-
-1. 確認 HuggingFace 上有該幣種的模型
-2. 將幣種名稱添加到 `SUPPORTED_COINS` 列表
-3. 在前端 HTML 的 `select` 中添加選項
-
-## 性能優化
-
-- 模型會在第一次請求時加載並緩存
-- 支持 CUDA GPU 加速（自動檢測）
-- 異步 I/O 防止阻塞
-- 批量預測優化
-
-## 安全性注意
-
-- 不要將 `HF_TOKEN` 提交到 git
-- 使用 `.env` 文件管理敏感信息
-- 在生產環境中使用 HTTPS
-- 考慮添加 API 密鑰認證
-
-## 貢獻
-
-Issues 和 Pull Requests 歡迎！
-
-## 許可証
+## 洱權
 
 MIT License
 
-## 聯繫方式
+## 聽今一下
 
-- GitHub: [@caizongxun](https://github.com/caizongxun)
-- HuggingFace: [@zongowo111](https://huggingface.co/zongowo111)
+- **V2 模型版本**: v2.0.0
+- **最後更新**: 2025-12-23
+- **作者**: zongowo111
 
----
-
-**免責聲明**: 本系統僅供學習和研究用途。交易涉及風險，請自行承擔責任。
+## 接觸方式
+日一有問題或建議，築開 Issue 或 Pull Request！
