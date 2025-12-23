@@ -8,6 +8,9 @@
 
 import sys
 import math
+import matplotlib
+# 強制使用不需要 GUI 的後端
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
@@ -139,6 +142,8 @@ def generate_future_klines(last_price, num_klines=5, trend=0, volatility_factor=
 def plot_prediction_comparison(historical_klines, future_klines, pred_result):
     """繪製圖表對比實際 vs 預測"""
     
+    print("\n[5] 生成對比圖表...")
+    
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10))
     fig.suptitle('CPB 模型預測準確度測試 - BTC 1H', fontsize=16, fontweight='bold')
     
@@ -188,7 +193,7 @@ def plot_prediction_comparison(historical_klines, future_klines, pred_result):
     ax1.xaxis.set_major_locator(mdates.HourLocator(interval=3))
     plt.setp(ax1.xaxis.get_majorticklabels(), rotation=45, ha='right')
     
-    # ========== 下圖：誤差分析 ==========
+    # ========== 下圖：誤差分析表 ==========
     # 計算誤差
     actual_future_close_5 = future_closes[-1] if len(future_closes) >= 5 else future_closes[-1]
     prediction_error_5 = pred_5_price - actual_future_close_5
@@ -248,7 +253,7 @@ def plot_prediction_comparison(historical_klines, future_klines, pred_result):
     分析結論：
     - 模型預測方向: {'看漲' if pred_result['direction'] > 0 else '看跌' if pred_result['direction'] < 0 else '持平'}
     - 5小時預測誤差: {error_percentage:.2f}% ({'準確' if abs(error_percentage) < 1 else '需要改進' if abs(error_percentage) < 2 else '誤差較大'})
-    - 建議: {'模型需要重新訓練，學習更準確的波動率' if abs(error_percentage) > 1.5 else '模型表現良好'}
+    - 建議: {'模型表現良好' if abs(error_percentage) < 1.5 else '需要重新訓練模型，學習更準確的波動率'}
     """
     
     ax2.text(0.5, -0.3, conclusion, transform=ax2.transAxes, 
@@ -257,8 +262,14 @@ def plot_prediction_comparison(historical_klines, future_klines, pred_result):
     
     plt.tight_layout()
     plt.savefig('prediction_test_result.png', dpi=300, bbox_inches='tight')
-    print("圖表已保存為: prediction_test_result.png")
-    plt.show()
+    print(f"    圖表已保存為: prediction_test_result.png")
+    print(f"    (文件位置: {__file__}/../prediction_test_result.png)")
+    
+    # 嘗試展示 (如果環境支持)
+    try:
+        plt.show()
+    except:
+        print("    (無法在當前環境顯示圖表，但文件已保存)")
 
 def main():
     print("="*70)
@@ -315,7 +326,6 @@ def main():
     print(f"    評估: {status}")
     
     # 5. 繪製對比圖
-    print("\n[5] 生成對比圖表...")
     plot_prediction_comparison(historical_klines, future_klines, pred_result)
     
     # 6. 結論
@@ -333,12 +343,13 @@ def main():
     ✓ 訓練新的 V2 模型，讓其學習波動率
     ✓ 使用實際歷史數據訓練 (不使用硬編碼百分比)
     ✓ 模型輸出應該是: [價格, 波動率] (2個預測值)
-    ✓ 用均方誤差 (MSE) 作為損失函數
+    ✓ 用 MSE 作為損失函數同時優化兩個指標
         """)
     else:
         print("""
     模型表現良好，無需立即重新訓練。
-    但建議收集更多真實數據，進行迭代優化。n        """)
+    但建議收集更多真實數據進行迭代優化。
+        """)
     
     print("\n" + "="*70)
     print("測試完成")
