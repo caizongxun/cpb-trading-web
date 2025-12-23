@@ -3,367 +3,561 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CPB Trading Prediction - 交易信號推薦</title>
+    <title>CPB 交易預測系統</title>
+    
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts@4.0.0/dist/lightweight-charts.production.js"></script>
+    
+    <!-- Chart.js for prediction charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-
+        
+        :root {
+            --primary: #2196F3;
+            --success: #4CAF50;
+            --danger: #f44336;
+            --warning: #ff9800;
+            --dark: #1a1a1a;
+            --light: #f5f5f5;
+            --text: #333;
+        }
+        
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: var(--text);
             min-height: 100vh;
             padding: 20px;
-            color: #333;
         }
-
+        
         .container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
         }
-
+        
         header {
-            text-align: center;
-            color: white;
-            margin-bottom: 40px;
-        }
-
-        h1 {
-            font-size: 2.5em;
-            margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
-        }
-
-        .subtitle {
-            font-size: 1.1em;
-            opacity: 0.9;
-        }
-
-        .controls {
             background: white;
+            padding: 20px;
             border-radius: 12px;
-            padding: 25px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            display: grid;
-            grid-template-columns: 1fr 1fr auto auto;
-            gap: 15px;
-            align-items: end;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }
-
-        .form-group {
+        
+        header h1 {
+            color: var(--primary);
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        header p {
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .control-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             display: flex;
-            flex-direction: column;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
         }
-
-        label {
+        
+        .select-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .select-group label {
             font-weight: 600;
-            margin-bottom: 8px;
-            color: #444;
-            font-size: 0.95em;
+            color: var(--text);
+            min-width: 80px;
         }
-
-        select, input {
-            padding: 12px;
+        
+        select {
+            padding: 10px 15px;
             border: 2px solid #ddd;
-            border-radius: 8px;
-            font-size: 1em;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
             transition: border-color 0.3s;
         }
-
-        select:focus, input:focus {
+        
+        select:hover, select:focus {
+            border-color: var(--primary);
             outline: none;
-            border-color: #667eea;
         }
-
-        select {
-            cursor: pointer;
-            background: white;
-        }
-
+        
         button {
-            padding: 12px 30px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 10px 25px;
+            background: var(--primary);
             color: white;
             border: none;
-            border-radius: 8px;
-            cursor: pointer;
+            border-radius: 6px;
+            font-size: 14px;
             font-weight: 600;
-            font-size: 1em;
-            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            transition: all 0.3s;
         }
-
+        
         button:hover {
+            background: #1976D2;
             transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.4);
         }
-
+        
         button:active {
             transform: translateY(0);
         }
-
-        .results-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+        
+        button.loading {
+            opacity: 0.7;
+            cursor: not-allowed;
         }
-
-        .prediction-card {
-            background: white;
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            border-left: 5px solid #667eea;
-            transition: transform 0.3s, box-shadow 0.3s;
-        }
-
-        .prediction-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
-        }
-
-        .coin-name {
-            font-size: 1.5em;
-            font-weight: 700;
-            color: #333;
-            margin-bottom: 15px;
-        }
-
-        .price-info {
+        
+        .grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 15px;
+            gap: 20px;
             margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid #eee;
         }
-
-        .price-item {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 8px;
+        
+        @media (max-width: 1200px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
         }
-
-        .price-label {
-            font-size: 0.85em;
-            color: #777;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .price-value {
-            font-size: 1.3em;
-            font-weight: 700;
-            color: #333;
-        }
-
-        .recommendation {
+        
+        .card {
+            background: white;
+            border-radius: 12px;
             padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
-            text-align: center;
-            font-weight: 600;
-            font-size: 1.1em;
-        }
-
-        .recommendation.buy {
-            background: #d4edda;
-            color: #155724;
-            border: 2px solid #28a745;
-        }
-
-        .recommendation.sell {
-            background: #f8d7da;
-            color: #721c24;
-            border: 2px solid #dc3545;
-        }
-
-        .recommendation.hold {
-            background: #fff3cd;
-            color: #856404;
-            border: 2px solid #ffc107;
-        }
-
-        .trading-levels {
-            display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 10px;
-            font-size: 0.9em;
-        }
-
-        .trading-level {
-            padding: 12px;
-            border-radius: 6px;
-            background: #f8f9fa;
-            text-align: center;
-        }
-
-        .trading-level-label {
-            color: #777;
-            font-size: 0.8em;
-            margin-bottom: 5px;
-            text-transform: uppercase;
-        }
-
-        .trading-level-value {
-            font-weight: 700;
-            color: #333;
-            font-size: 1.1em;
-        }
-
-        .confidence {
-            font-size: 0.85em;
-            color: #666;
-            margin-top: 15px;
-            padding-top: 15px;
-            border-top: 1px solid #eee;
-        }
-
-        .confidence-bar {
-            width: 100%;
-            height: 6px;
-            background: #ddd;
-            border-radius: 3px;
-            margin-top: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             overflow: hidden;
         }
-
-        .confidence-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-            transition: width 0.3s;
+        
+        .card h2 {
+            color: var(--primary);
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 2px solid var(--light);
+            padding-bottom: 10px;
         }
-
-        .timestamp {
-            font-size: 0.8em;
-            color: #999;
+        
+        #tradingview-chart {
+            height: 400px;
+            width: 100%;
+        }
+        
+        .prediction-chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-box h3 {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .stat-box .value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .stat-box.buy {
+            background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+        }
+        
+        .stat-box.sell {
+            background: linear-gradient(135deg, #f44336 0%, #e53935 100%);
+        }
+        
+        .stat-box.hold {
+            background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+        }
+        
+        .recommendation {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-right: 10px;
+        }
+        
+        .recommendation.buy {
+            background: #E8F5E9;
+            color: #2E7D32;
+        }
+        
+        .recommendation.sell {
+            background: #FFEBEE;
+            color: #C62828;
+        }
+        
+        .recommendation.hold {
+            background: #FFF3E0;
+            color: #E65100;
+        }
+        
+        .price-levels {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
             margin-top: 15px;
-            text-align: right;
         }
-
+        
+        .price-level {
+            background: var(--light);
+            padding: 10px;
+            border-radius: 6px;
+            text-align: center;
+            border-left: 4px solid var(--primary);
+        }
+        
+        .price-level.entry {
+            border-left-color: var(--primary);
+        }
+        
+        .price-level.stop-loss {
+            border-left-color: var(--danger);
+        }
+        
+        .price-level.take-profit {
+            border-left-color: var(--success);
+        }
+        
+        .price-level label {
+            display: block;
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .price-level .value {
+            display: block;
+            font-size: 18px;
+            font-weight: bold;
+            color: var(--text);
+        }
+        
+        .klines-chart-container {
+            position: relative;
+            height: 300px;
+            width: 100%;
+            margin-top: 15px;
+        }
+        
         .loading {
             text-align: center;
             padding: 40px;
-            color: white;
-            font-size: 1.2em;
+            color: #999;
         }
-
-        .spinner {
-            border: 3px solid rgba(255,255,255,0.3);
+        
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid var(--primary);
             border-radius: 50%;
-            border-top: 3px solid white;
-            width: 40px;
-            height: 40px;
             animation: spin 1s linear infinite;
-            margin: 0 auto 20px;
+            margin-left: 10px;
+            vertical-align: middle;
         }
-
+        
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-
+        
         .error {
-            background: #f8d7da;
-            color: #721c24;
+            background: #FFEBEE;
+            border: 1px solid #ef5350;
+            color: #c62828;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        
+        .error.show {
+            display: block;
+        }
+        
+        .success {
+            background: #E8F5E9;
+            border: 1px solid #81c784;
+            color: #2e7d32;
+            padding: 12px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+            display: none;
+        }
+        
+        .success.show {
+            display: block;
+        }
+        
+        .tabs {
+            display: flex;
+            gap: 10px;
+            border-bottom: 2px solid var(--light);
+            margin-bottom: 15px;
+        }
+        
+        .tab-btn {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            color: #999;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+            position: relative;
+            bottom: -2px;
+        }
+        
+        .tab-btn.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        footer {
+            text-align: center;
+            color: white;
+            margin-top: 40px;
             padding: 20px;
-            border-radius: 8px;
-            border: 2px solid #dc3545;
-            margin-bottom: 20px;
-        }
-
-        .chart-container {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            margin-top: 15px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        @media (max-width: 1024px) {
-            .controls {
-                grid-template-columns: 1fr 1fr;
-            }
-
-            h1 {
-                font-size: 2em;
-            }
-        }
-
-        @media (max-width: 768px) {
-            .controls {
-                grid-template-columns: 1fr;
-            }
-
-            .results-grid {
-                grid-template-columns: 1fr;
-            }
-
-            h1 {
-                font-size: 1.5em;
-            }
+            font-size: 12px;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>CPB Trading Prediction</h1>
-            <p class="subtitle">實時加密貨幣交易信號推薦系統</p>
+            <h1>CPB 交易預測系統</h1>
+            <p>實時加密貨幣K線圖表 + AI預測信號 + 交易開倉建議</p>
         </header>
-
-        <div class="controls">
-            <div class="form-group">
-                <label for="coinSelect">選擇幣種</label>
+        
+        <div class="control-panel">
+            <div class="select-group">
+                <label>選擇幣種:</label>
                 <select id="coinSelect">
-                    <option value="BTCUSDT">Bitcoin (BTCUSDT)</option>
-                    <option value="ETHUSDT">Ethereum (ETHUSDT)</option>
-                    <option value="BNBUSDT">BNB (BNBUSDT)</option>
-                    <option value="ADAUSDT">Cardano (ADAUSDT)</option>
-                    <option value="SOLUSDT">Solana (SOLUSDT)</option>
-                    <option value="XRPUSDT">Ripple (XRPUSDT)</option>
-                    <option value="DOGEUSDT">Dogecoin (DOGEUSDT)</option>
-                    <option value="LTCUSDT">Litecoin (LTCUSDT)</option>
-                    <option value="LINKUSDT">Chainlink (LINKUSDT)</option>
-                    <option value="UNIUSDT">Uniswap (UNIUSDT)</option>
+                    <option value="BTCUSDT">比特幣 (BTC)</option>
+                    <option value="ETHUSDT">以太坊 (ETH)</option>
+                    <option value="BNBUSDT">幣安幣 (BNB)</option>
+                    <option value="ADAUSDT">卡爾達諾 (ADA)</option>
+                    <option value="SOLUSDT">索拉納 (SOL)</option>
+                    <option value="XRPUSDT">瑞波幣 (XRP)</option>
                 </select>
             </div>
-
-            <div class="form-group">
-                <label for="lookbackPeriods">看回週期數</label>
-                <input type="number" id="lookbackPeriods" value="20" min="10" max="100" step="5">
-            </div>
-
-            <button onclick="predictSingle()">單幣種預測</button>
-            <button onclick="predictBatch()">批量預測全部</button>
+            <button id="predictBtn" onclick="getPrediction()">獲取預測</button>
+            <button id="refreshBtn" onclick="autoRefresh()" style="background: var(--warning);">自動刷新</button>
         </div>
-
-        <div id="resultsContainer"></div>
-    </div>
-
-    <script>
-        // ============================================================================
-        // API 設定
-        // ============================================================================
-        const API_BASE = 'http://localhost:8000';
-        const COINS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT',
-                       'XRPUSDT', 'DOGEUSDT', 'LTCUSDT', 'LINKUSDT', 'UNIUSDT',
-                       'AVAXUSDT', 'ATOMUSDT', 'VETUSDT', 'GRTUSDT', 'AXSUSDT',
-                       'BCHUSDT', 'MANAUSDT', 'SANDUSDT', 'XLMUSDT'];
-
-        // ============================================================================
-        // 主要函數
-        // ============================================================================
-
-        async function predictSingle() {
-            const coin = document.getElementById('coinSelect').value;
-            const lookback = parseInt(document.getElementById('lookbackPeriods').value);
+        
+        <div class="error" id="errorMsg"></div>
+        <div class="success" id="successMsg"></div>
+        
+        <div class="grid">
+            <!-- 左側: TradingView K線圖 -->
+            <div class="card">
+                <h2>實時K線圖 (TradingView)</h2>
+                <div id="tradingview-chart"></div>
+            </div>
             
-            showLoading();
+            <!-- 右側: 預測統計 -->
+            <div class="card">
+                <h2>預測結果</h2>
+                <div id="predictionContent">
+                    <div class="loading">等待預測中</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 完整寬度: 預測圖表 -->
+        <div class="grid" style="grid-template-columns: 1fr;">
+            <div class="card">
+                <h2>價格預測走勢</h2>
+                <div class="tabs">
+                    <button class="tab-btn active" onclick="switchTab('prediction')">價格預測</button>
+                    <button class="tab-btn" onclick="switchTab('klines')">K線數據</button>
+                </div>
+                
+                <div id="prediction" class="tab-content active">
+                    <div class="prediction-chart-container">
+                        <canvas id="predictionChart"></canvas>
+                    </div>
+                </div>
+                
+                <div id="klines" class="tab-content">
+                    <div class="klines-chart-container">
+                        <canvas id="klinesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <footer>
+        <p>CPB Trading Web v1.0 | 24/7 加密貨幣實時分析</p>
+    </footer>
+    
+    <script>
+        // ========================================================================
+        // 全局變數
+        // ========================================================================
+        let predictionChart = null;
+        let klinesChart = null;
+        let currentCoin = 'BTCUSDT';
+        let currentPrediction = null;
+        let autoRefreshInterval = null;
+        
+        const API_BASE = 'http://localhost:8000';
+        
+        // ========================================================================
+        // 初始化
+        // ========================================================================
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded');
+            initTradingViewChart();
+            getPrediction();
+        });
+        
+        // ========================================================================
+        // TradingView 圖表初始化
+        // ========================================================================
+        function initTradingViewChart() {
+            const container = document.getElementById('tradingview-chart');
+            const width = container.clientWidth;
+            const height = 400;
+            
+            const chart = LightweightCharts.createChart(container, {
+                width: width,
+                height: height,
+                timeScale: {
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+                layout: {
+                    background: { color: '#ffffff' },
+                    textColor: '#333',
+                },
+                grid: {
+                    horzLines: {
+                        color: '#f0f0f0',
+                    },
+                    vertLines: {
+                        color: '#f0f0f0',
+                    },
+                },
+            });
+            
+            const candlestickSeries = chart.addCandlestickSeries({
+                upColor: '#4CAF50',
+                downColor: '#f44336',
+                borderDownColor: '#f44336',
+                borderUpColor: '#4CAF50',
+                wickDownColor: '#f44336',
+                wickUpColor: '#4CAF50',
+            });
+            
+            // 生成示例數據
+            const now = Math.floor(Date.now() / 1000);
+            const data = [];
+            let basePrice = 42000;
+            
+            for (let i = 20; i >= 0; i--) {
+                const time = now - i * 3600;
+                const change = Math.random() * 1000 - 500;
+                const open = basePrice;
+                const close = basePrice + change;
+                const high = Math.max(open, close) + Math.random() * 500;
+                const low = Math.min(open, close) - Math.random() * 500;
+                
+                data.push({
+                    time,
+                    open: Math.round(open * 100) / 100,
+                    high: Math.round(high * 100) / 100,
+                    low: Math.round(low * 100) / 100,
+                    close: Math.round(close * 100) / 100,
+                });
+                
+                basePrice = close;
+            }
+            
+            candlestickSeries.setData(data);
+            chart.timeScale().fitContent();
+            
+            // 窗口大小調整
+            window.addEventListener('resize', () => {
+                const newWidth = container.clientWidth;
+                chart.applyOptions({ width: newWidth });
+            });
+        }
+        
+        // ========================================================================
+        // 獲取預測
+        // ========================================================================
+        async function getPrediction() {
+            const coin = document.getElementById('coinSelect').value;
+            currentCoin = coin;
+            
+            const btn = document.getElementById('predictBtn');
+            btn.disabled = true;
+            btn.classList.add('loading');
+            btn.textContent = '生成中...';
+            
+            const predContent = document.getElementById('predictionContent');
+            predContent.innerHTML = '<div class="loading">正在計算預測</div>';
             
             try {
                 const response = await fetch(`${API_BASE}/predict`, {
@@ -373,146 +567,253 @@
                     },
                     body: JSON.stringify({
                         coin: coin,
-                        lookback_periods: lookback,
-                        prediction_horizon: 5
-                    })
+                        lookback_periods: 20,
+                        prediction_horizon: 5,
+                    }),
                 });
-
+                
                 if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
+                    throw new Error(`API error: ${response.status}`);
                 }
-
+                
                 const data = await response.json();
-                displayResult(data);
+                currentPrediction = data;
+                
+                displayPrediction(data);
+                updatePredictionChart(data);
+                updateKlinesChart(data);
+                
+                showSuccess(`${coin} 預測已更新`);
             } catch (error) {
+                console.error('Error:', error);
                 showError(`預測失敗: ${error.message}`);
-                console.error('Error:', error);
+                predContent.innerHTML = '<div class="error">無法連接後端，請確保後端已啟動</div>';
+            } finally {
+                btn.disabled = false;
+                btn.classList.remove('loading');
+                btn.textContent = '獲取預測';
             }
         }
-
-        async function predictBatch() {
-            showLoading(`正在批量預測 ${COINS.length} 個幣種...`);
-            
-            try {
-                const response = await fetch(`${API_BASE}/predict-batch`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify(COINS)
-                });
-
-                if (!response.ok) {
-                    throw new Error(`API Error: ${response.status}`);
-                }
-
-                const data = await response.json();
-                displayResults(data);
-            } catch (error) {
-                showError(`批量預測失敗: ${error.message}`);
-                console.error('Error:', error);
-            }
-        }
-
-        function displayResult(result) {
-            displayResults([result]);
-        }
-
-        function displayResults(results) {
-            const container = document.getElementById('resultsContainer');
-            
-            if (!results || results.length === 0) {
-                container.innerHTML = '<div class="error">沒有預測結果</div>';
-                return;
-            }
-
-            let html = '<div class="results-grid">';
-            
-            for (const result of results) {
-                const recClass = result.recommendation.toLowerCase();
-                const confidence = (result.confidence * 100).toFixed(1);
-                const timestamp = new Date(result.timestamp).toLocaleString('zh-TW');
-
-                html += `
-                    <div class="prediction-card">
-                        <div class="coin-name">$${result.coin.replace('USDT', '')}</div>
-                        
-                        <div class="price-info">
-                            <div class="price-item">
-                                <div class="price-label">目前價格</div>
-                                <div class="price-value">$${result.current_price.toFixed(2)}</div>
-                            </div>
-                            <div class="price-item">
-                                <div class="price-label">3根K棒預測</div>
-                                <div class="price-value">$${result.predicted_price_3.toFixed(2)}</div>
-                            </div>
-                        </div>
-
-                        <div class="recommendation ${recClass}">
-                            ${result.recommendation}
-                        </div>
-
-                        <div class="trading-levels">
-                            <div class="trading-level">
-                                <div class="trading-level-label">開單點</div>
-                                <div class="trading-level-value">$${result.entry_price.toFixed(2)}</div>
-                            </div>
-                            <div class="trading-level">
-                                <div class="trading-level-label">止損</div>
-                                <div class="trading-level-value">$${result.stop_loss.toFixed(2)}</div>
-                            </div>
-                            <div class="trading-level">
-                                <div class="trading-level-label">止盈</div>
-                                <div class="trading-level-value">$${result.take_profit.toFixed(2)}</div>
-                            </div>
-                        </div>
-
-                        <div class="confidence">
-                            <div>信心指數: ${confidence}%</div>
-                            <div class="confidence-bar">
-                                <div class="confidence-fill" style="width: ${confidence}%"></div>
-                            </div>
-                        </div>
-
-                        <div class="timestamp">更新時間: ${timestamp}</div>
+        
+        // ========================================================================
+        // 顯示預測結果
+        // ========================================================================
+        function displayPrediction(data) {
+            const html = `
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <h3>當前價格</h3>
+                        <div class="value">$${data.current_price.toFixed(2)}</div>
                     </div>
-                `;
-            }
-
-            html += '</div>';
-            container.innerHTML = html;
-        }
-
-        function showLoading(message = '正在預測中...') {
-            const container = document.getElementById('resultsContainer');
-            container.innerHTML = `
-                <div class="loading">
-                    <div class="spinner"></div>
-                    <div>${message}</div>
+                    <div class="stat-box">
+                        <h3>3根K線預測</h3>
+                        <div class="value">$${data.predicted_price_3.toFixed(2)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <h3>5根K線預測</h3>
+                        <div class="value">$${data.predicted_price_5.toFixed(2)}</div>
+                    </div>
+                    <div class="stat-box">
+                        <h3>信心度</h3>
+                        <div class="value">${(data.confidence * 100).toFixed(0)}%</div>
+                    </div>
+                </div>
+                
+                <div style="margin-bottom: 20px;">
+                    <h3 style="margin-bottom: 10px;">交易建議</h3>
+                    <span class="recommendation ${data.recommendation.toLowerCase()}">
+                        ${data.recommendation}
+                    </span>
+                    <span style="color: #666; font-size: 12px;">
+                        ${data.timestamp}
+                    </span>
+                </div>
+                
+                <div class="price-levels">
+                    <div class="price-level entry">
+                        <label>入場價</label>
+                        <span class="value">$${data.entry_price.toFixed(2)}</span>
+                    </div>
+                    <div class="price-level stop-loss">
+                        <label>止損</label>
+                        <span class="value">$${data.stop_loss.toFixed(2)}</span>
+                    </div>
+                    <div class="price-level take-profit">
+                        <label>止盈</label>
+                        <span class="value">$${data.take_profit.toFixed(2)}</span>
+                    </div>
                 </div>
             `;
+            
+            document.getElementById('predictionContent').innerHTML = html;
         }
-
-        function showError(message) {
-            const container = document.getElementById('resultsContainer');
-            container.innerHTML = `<div class="error">${message}</div>`;
-        }
-
-        // ============================================================================
-        // 初始化
-        // ============================================================================
-        window.addEventListener('DOMContentLoaded', async () => {
-            // 檢查 API 連線
-            try {
-                const response = await fetch(`${API_BASE}/health`);
-                if (response.ok) {
-                    const health = await response.json();
-                    console.log('API Status:', health);
-                }
-            } catch (error) {
-                console.warn('API 未連線，請確保 FastAPI 伺服器正在運行:', error);
+        
+        // ========================================================================
+        // 更新預測圖表
+        // ========================================================================
+        function updatePredictionChart(data) {
+            const ctx = document.getElementById('predictionChart');
+            
+            if (predictionChart) {
+                predictionChart.destroy();
             }
-        });
+            
+            const current = data.current_price;
+            const pred3 = data.predicted_price_3;
+            const pred5 = data.predicted_price_5;
+            
+            predictionChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['當前', '3K線後', '5K線後'],
+                    datasets: [
+                        {
+                            label: '價格走勢',
+                            data: [current, pred3, pred5],
+                            borderColor: '#2196F3',
+                            backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 6,
+                            pointBackgroundColor: ['#2196F3', '#FF9800', '#4CAF50'],
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                font: { size: 12 },
+                                padding: 15,
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: '價格 (USDT)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // ========================================================================
+        // 更新K線圖表
+        // ========================================================================
+        function updateKlinesChart(data) {
+            const ctx = document.getElementById('klinesChart');
+            
+            if (klinesChart) {
+                klinesChart.destroy();
+            }
+            
+            const klines = data.klines.slice(-20);  // 最近20根
+            
+            klinesChart = new Chart(ctx, {
+                type: 'candlestick',
+                data: {
+                    labels: klines.map(k => {
+                        const date = new Date(k.time);
+                        return date.getHours() + ':00';
+                    }),
+                    datasets: [
+                        {
+                            label: 'OHLC',
+                            data: klines.map(k => ({
+                                x: k.time,
+                                o: k.open,
+                                h: k.high,
+                                l: k.low,
+                                c: k.close,
+                            })),
+                            borderColor: 'rgb(0, 150, 136)',
+                            backgroundColor: 'rgba(0, 150, 136, 0.5)',
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                        }
+                    }
+                }
+            });
+        }
+        
+        // ========================================================================
+        // 標籤頁切換
+        // ========================================================================
+        function switchTab(tabName) {
+            // 隱藏所有標籤內容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // 顯示選中的標籤
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+        
+        // ========================================================================
+        // 自動刷新
+        // ========================================================================
+        function autoRefresh() {
+            const btn = document.getElementById('refreshBtn');
+            
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+                btn.style.opacity = '1';
+                btn.textContent = '自動刷新';
+            } else {
+                autoRefreshInterval = setInterval(() => {
+                    getPrediction();
+                }, 60000);  // 每60秒更新一次
+                btn.style.opacity = '0.7';
+                btn.textContent = '停止刷新';
+                showSuccess('已啟用自動刷新 (每60秒)');
+            }
+        }
+        
+        // ========================================================================
+        // 消息提示
+        // ========================================================================
+        function showError(message) {
+            const errorEl = document.getElementById('errorMsg');
+            errorEl.textContent = message;
+            errorEl.classList.add('show');
+            setTimeout(() => {
+                errorEl.classList.remove('show');
+            }, 5000);
+        }
+        
+        function showSuccess(message) {
+            const successEl = document.getElementById('successMsg');
+            successEl.textContent = message;
+            successEl.classList.add('show');
+            setTimeout(() => {
+                successEl.classList.remove('show');
+            }, 3000);
+        }
     </script>
 </body>
 </html>
