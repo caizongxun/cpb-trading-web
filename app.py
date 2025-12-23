@@ -70,9 +70,9 @@ class KlineData(BaseModel):
     volume: float
 
 class VolatilityData(BaseModel):
-    current: float  # 當前波動率 (%)
-    predicted_3: float  # 3根K棒後預測波動率 (%)
-    predicted_5: float  # 5根K棒後預測波動率 (%)
+    current: float  # 當前波動率 (%) - 最後一根K線的價格變化
+    predicted_3: float  # 3根K棒後預測波動率 (%) - 預測價格變化
+    predicted_5: float  # 5根K棒後預測波動率 (%) - 預測價格變化
     volatility_level: str  # "低" / "中" / "高"
     atr_14: float  # 14根K棒平均真實幅度
 
@@ -155,34 +155,13 @@ class ModelManager:
         closes = [k['close'] for k in klines]
         highs = [k['high'] for k in klines]
         lows = [k['low'] for k in klines]
+        opens = [k['open'] for k in klines]
         current_close = closes[-1]
         
-        # 計算價格變化率
-        price_changes = []
-        for i in range(1, len(closes)):
-            change = (closes[i] - closes[i-1]) / closes[i-1] * 100
-            price_changes.append(change)
-        
-        # 計算標準差（波動率）
-        mean_change = sum(price_changes) / len(price_changes) if price_changes else 0
-        variance = sum((x - mean_change) ** 2 for x in price_changes) / len(price_changes) if price_changes else 0
-        volatility_current = math.sqrt(variance)  # 當前波動率 (%)
-        
-        # 趨勢判斷
-        recent_avg = sum(closes[-5:]) / 5
-        past_avg = sum(closes[:5]) / 5
-        trend = recent_avg - past_avg
-        
-        if trend > 0:
-            direction = 1  # 看漲
-        elif trend < 0:
-            direction = -1  # 看跌
-        else:
-            direction = 0  # 持平
-        
-        # 預測價格
-        pred_3 = current_close * (1 + 0.02 * direction)  # ±2%
-        pred_5 = current_close * (1 + 0.03 * direction)  # ±3%
+        # === 計算波動率 (價格變化百分比) ===
+        # 當前波動率 = 最後一根K線的 (close - open) / open * 100%
+        last_kline = klines[-1]
+        volatility_current = ((last_kline['close'] - last_kline['open']) / last_kline['open']) * 100
         
         # 計算平均真實幅度 (ATR)
         true_ranges = []
@@ -200,15 +179,31 @@ class ModelManager:
         
         atr_14 = sum(true_ranges[-14:]) / min(14, len(true_ranges)) if true_ranges else 0
         
-        # 預測波動率（未來可能波動）
-        # 基於歷史波動率和趨勢強度
-        volatility_pred_3 = volatility_current * 1.05  # 假設向上變化 5%
-        volatility_pred_5 = volatility_current * 1.10  # 假設向上變化 10%
+        # 趨勢判斷
+        recent_avg = sum(closes[-5:]) / 5
+        past_avg = sum(closes[:5]) / 5
+        trend = recent_avg - past_avg
         
-        # 波動率等級
-        if volatility_current < 1.0:
+        if trend > 0:
+            direction = 1  # 看漲
+        elif trend < 0:
+            direction = -1  # 看跌
+        else:
+            direction = 0  # 持平
+        
+        # 預測價格
+        pred_3 = current_close * (1 + 0.02 * direction)  # ±2%
+        pred_5 = current_close * (1 + 0.03 * direction)  # ±3%
+        
+        # 預測波動率 (基於預測價格變化)
+        volatility_pred_3 = ((pred_3 - current_close) / current_close) * 100
+        volatility_pred_5 = ((pred_5 - current_close) / current_close) * 100
+        
+        # 波動率等級 (基於最後K線的變化幅度)
+        abs_volatility = abs(volatility_current)
+        if abs_volatility < 0.5:
             vol_level = "低"
-        elif volatility_current < 2.5:
+        elif abs_volatility < 1.5:
             vol_level = "中"
         else:
             vol_level = "高"
@@ -218,9 +213,9 @@ class ModelManager:
             'price_5': round(pred_5, 2),
             'direction': direction,
             'confidence': 0.65,
-            'volatility_current': round(volatility_current, 4),
-            'volatility_pred_3': round(volatility_pred_3, 4),
-            'volatility_pred_5': round(volatility_pred_5, 4),
+            'volatility_current': volatility_current,  # 直接返回百分比
+            'volatility_pred_3': volatility_pred_3,    # 直接返回百分比
+            'volatility_pred_5': volatility_pred_5,    # 直接返回百分比
             'volatility_level': vol_level,
             'atr_14': round(atr_14, 2),
         }
@@ -410,9 +405,9 @@ async def predict(request: PredictionRequest) -> PredictionResult:
         take_profit=take_profit,
         confidence=confidence,
         volatility=VolatilityData(
-            current=volatility_current * 100,  # 轉換為百分比
-            predicted_3=volatility_pred_3 * 100,
-            predicted_5=volatility_pred_5 * 100,
+            current=round(volatility_current, 2),  # 已經是百分比
+            predicted_3=round(volatility_pred_3, 2),
+            predicted_5=round(volatility_pred_5, 2),
             volatility_level=volatility_level,
             atr_14=atr_14
         ),
