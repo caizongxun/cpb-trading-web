@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CPB 交易預測系統 - V2 模型</title>
     
-    <!-- TradingView Lightweight Charts -->
-    <script src="https://unpkg.com/lightweight-charts@4.0.0/dist/lightweight-charts.production.js"></script>
+    <!-- TradingView Lightweight Charts - 使用最新版本 -->
+    <script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     
     <!-- Chart.js for prediction charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
@@ -171,6 +171,7 @@
         #tradingview-chart {
             height: 400px;
             width: 100%;
+            background: #ffffff;
         }
         
         .prediction-chart-container {
@@ -531,9 +532,9 @@
             <div class="card">
                 <h2>價格預測走勢</h2>
                 <div class="tabs">
-                    <button class="tab-btn active" onclick="switchTab('prediction')">價格預測</button>
-                    <button class="tab-btn" onclick="switchTab('klines')">K線數據</button>
-                    <button class="tab-btn" onclick="switchTab('volume')">交易量</button>
+                    <button class="tab-btn active" onclick="switchTab(event, 'prediction')">價格預測</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'klines')">K線數據</button>
+                    <button class="tab-btn" onclick="switchTab(event, 'volume')">交易量</button>
                 </div>
                 
                 <div id="prediction" class="tab-content active">
@@ -572,73 +573,96 @@
         
         const API_BASE = 'http://localhost:8000';
         
+        // 確保 LightweightCharts 已加載
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Page loaded');
-            initTradingViewChart();
+            
+            // 檢查 LightweightCharts 是否可用
+            if (typeof LightweightCharts !== 'undefined') {
+                console.log('LightweightCharts loaded successfully');
+                initTradingViewChart();
+            } else {
+                console.error('LightweightCharts not available');
+                document.getElementById('tradingview-chart').innerHTML = '<div style="color: red; padding: 20px;">TradingView 圖表加載失敗</div>';
+            }
+            
             getPrediction();
         });
         
         function initTradingViewChart() {
-            const container = document.getElementById('tradingview-chart');
-            const width = container.clientWidth;
-            const height = 400;
-            
-            const chart = LightweightCharts.createChart(container, {
-                width: width,
-                height: height,
-                timeScale: {
-                    timeVisible: true,
-                    secondsVisible: false,
-                },
-                layout: {
-                    background: { color: '#ffffff' },
-                    textColor: '#333',
-                },
-                grid: {
-                    horzLines: { color: '#f0f0f0' },
-                    vertLines: { color: '#f0f0f0' },
-                },
-            });
-            
-            const candlestickSeries = chart.addCandlestickSeries({
-                upColor: '#4CAF50',
-                downColor: '#f44336',
-                borderDownColor: '#f44336',
-                borderUpColor: '#4CAF50',
-                wickDownColor: '#f44336',
-                wickUpColor: '#4CAF50',
-            });
-            
-            const now = Math.floor(Date.now() / 1000);
-            const data = [];
-            let basePrice = 42000;
-            
-            for (let i = 20; i >= 0; i--) {
-                const time = now - i * 3600;
-                const change = Math.random() * 1000 - 500;
-                const open = basePrice;
-                const close = basePrice + change;
-                const high = Math.max(open, close) + Math.random() * 500;
-                const low = Math.min(open, close) - Math.random() * 500;
+            try {
+                const container = document.getElementById('tradingview-chart');
                 
-                data.push({
-                    time,
-                    open: Math.round(open * 100) / 100,
-                    high: Math.round(high * 100) / 100,
-                    low: Math.round(low * 100) / 100,
-                    close: Math.round(close * 100) / 100,
+                // 清空容器
+                container.innerHTML = '';
+                
+                const width = container.clientWidth || 800;
+                const height = 400;
+                
+                const chart = LightweightCharts.createChart(container, {
+                    width: width,
+                    height: height,
+                    timeScale: {
+                        timeVisible: true,
+                        secondsVisible: false,
+                    },
+                    layout: {
+                        background: { color: '#ffffff' },
+                        textColor: '#333',
+                    },
+                    grid: {
+                        horzLines: { color: '#f0f0f0' },
+                        vertLines: { color: '#f0f0f0' },
+                    },
                 });
                 
-                basePrice = close;
+                const candlestickSeries = chart.addCandlestickSeries({
+                    upColor: '#4CAF50',
+                    downColor: '#f44336',
+                    borderDownColor: '#f44336',
+                    borderUpColor: '#4CAF50',
+                    wickDownColor: '#f44336',
+                    wickUpColor: '#4CAF50',
+                });
+                
+                const now = Math.floor(Date.now() / 1000);
+                const data = [];
+                let basePrice = 42000;
+                
+                for (let i = 20; i >= 0; i--) {
+                    const time = now - i * 3600;
+                    const change = Math.random() * 1000 - 500;
+                    const open = basePrice;
+                    const close = basePrice + change;
+                    const high = Math.max(open, close) + Math.random() * 500;
+                    const low = Math.min(open, close) - Math.random() * 500;
+                    
+                    data.push({
+                        time,
+                        open: Math.round(open * 100) / 100,
+                        high: Math.round(high * 100) / 100,
+                        low: Math.round(low * 100) / 100,
+                        close: Math.round(close * 100) / 100,
+                    });
+                    
+                    basePrice = close;
+                }
+                
+                candlestickSeries.setData(data);
+                chart.timeScale().fitContent();
+                
+                window.addEventListener('resize', () => {
+                    const newWidth = container.clientWidth;
+                    if (newWidth > 0) {
+                        chart.applyOptions({ width: newWidth });
+                    }
+                });
+                
+                console.log('TradingView chart initialized successfully');
+            } catch (error) {
+                console.error('Error initializing TradingView chart:', error);
+                document.getElementById('tradingview-chart').innerHTML = `<div style="color: red; padding: 20px;">圖表初始化失敗: ${error.message}</div>`;
             }
-            
-            candlestickSeries.setData(data);
-            chart.timeScale().fitContent();
-            
-            window.addEventListener('resize', () => {
-                const newWidth = container.clientWidth;
-                chart.applyOptions({ width: newWidth });
-            });
         }
         
         async function getPrediction() {
@@ -993,7 +1017,9 @@
             });
         }
         
-        function switchTab(tabName) {
+        function switchTab(e, tabName) {
+            e.preventDefault();
+            
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
@@ -1002,7 +1028,7 @@
             });
             
             document.getElementById(tabName).classList.add('active');
-            event.target.classList.add('active');
+            e.target.classList.add('active');
         }
         
         function autoRefresh() {
