@@ -91,6 +91,7 @@
             font-size: 14px;
             cursor: pointer;
             transition: border-color 0.3s;
+            min-width: 200px;
         }
         
         select:hover, select:focus {
@@ -429,19 +430,40 @@
     <div class="container">
         <header>
             <h1>CPB 交易預測系統</h1>
-            <p>實時加密貨幣K線圖表 + AI預測信號 + 波動率預測 + 交易開倉建議</p>
+            <p>實時加密貨幣K線圖表 + AI預測信號 + 波動率預測 + 交易建議點位</p>
         </header>
         
         <div class="control-panel">
             <div class="select-group">
                 <label>選擇幣種:</label>
                 <select id="coinSelect">
-                    <option value="BTCUSDT">比特幣 (BTC)</option>
-                    <option value="ETHUSDT">以太坊 (ETH)</option>
-                    <option value="BNBUSDT">幣安幣 (BNB)</option>
-                    <option value="ADAUSDT">卡爾達諾 (ADA)</option>
-                    <option value="SOLUSDT">索拉納 (SOL)</option>
-                    <option value="XRPUSDT">瑞波幣 (XRP)</option>
+                    <optgroup label="主流幣">
+                        <option value="BTCUSDT">比特幣 (BTC)</option>
+                        <option value="ETHUSDT">以太坊 (ETH)</option>
+                        <option value="BNBUSDT">幣安幣 (BNB)</option>
+                    </optgroup>
+                    <optgroup label="主流山寨幣">
+                        <option value="ADAUSDT">卡爾達諾 (ADA)</option>
+                        <option value="SOLUSDT">索拉納 (SOL)</option>
+                        <option value="XRPUSDT">瑞波幣 (XRP)</option>
+                        <option value="DOGEUSDT">狗狗幣 (DOGE)</option>
+                        <option value="LTCUSDT">萊特幣 (LTC)</option>
+                        <option value="LINKUSDT">Chainlink (LINK)</option>
+                        <option value="UNIUSDT">Uniswap (UNI)</option>
+                    </optgroup>
+                    <optgroup label="DeFi & Layer2">
+                        <option value="AVAXUSDT">雪崩幣 (AVAX)</option>
+                        <option value="ATOMUSDT">Cosmos (ATOM)</option>
+                        <option value="VETUSDT">VeChain (VET)</option>
+                        <option value="GRTUSDT">The Graph (GRT)</option>
+                        <option value="AXSUSDT">Axie Infinity (AXS)</option>
+                    </optgroup>
+                    <optgroup label="其他">
+                        <option value="BCHUSDT">比特幣現金 (BCH)</option>
+                        <option value="MANAUSDT">Decentraland (MANA)</option>
+                        <option value="SANDUSDT">The Sandbox (SAND)</option>
+                        <option value="XLMUSDT">恆星幣 (XLM)</option>
+                    </optgroup>
                 </select>
             </div>
             <button id="predictBtn" onclick="getPrediction()">獲取預測</button>
@@ -467,7 +489,7 @@
             </div>
         </div>
         
-        <!-- 完整寬度: 預測圖表 -->
+        <!-- 完整寬度: 波動率預測 -->
         <div class="grid" style="grid-template-columns: 1fr;">
             <div class="card">
                 <h2>波動率預測走勢</h2>
@@ -477,7 +499,7 @@
             </div>
         </div>
         
-        <!-- 下一個區段: 新須文圖表 -->
+        <!-- 下一個區段: 價格預測圖表 -->
         <div class="grid" style="grid-template-columns: 1fr;">
             <div class="card">
                 <h2>價格預測走勢</h2>
@@ -639,12 +661,6 @@
         }
         
         function displayPrediction(data) {
-            const getVolatilityLevel = (vol) => {
-                if (vol < 1.0) return '低';
-                if (vol < 2.5) return '中';
-                return '高';
-            };
-            
             const html = `
                 <div class="stats-grid">
                     <div class="stat-box">
@@ -691,7 +707,7 @@
                 </div>
                 
                 <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #f0f0f0;">
-                    <h3 style="margin-bottom: 10px;">6ce2動率計算</h3>
+                    <h3 style="margin-bottom: 10px;">波動率計算</h3>
                     <div class="volatility-grid">
                         <div class="volatility-box ${data.volatility.volatility_level === '低' ? 'low' : data.volatility.volatility_level === '中' ? 'medium' : 'high'}">
                             <label>當前波動率</label>
