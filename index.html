@@ -504,7 +504,7 @@
         <div class="grid">
             <!-- 左側: TradingView K線圖 -->
             <div class="card">
-                <h2>實時K線圖 (TradingView)</h2>
+                <h2>實時K線圖 (TradingView) - 實時上佋</h2>
                 <div id="tradingview-chart"></div>
             </div>
             
@@ -572,6 +572,7 @@
         let autoRefreshInterval = null;
         
         const API_BASE = 'http://localhost:8000';
+        const BINANCE_API = 'https://api.binance.com/api/v3';
         
         // 確保 LightweightCharts 已加載
         document.addEventListener('DOMContentLoaded', function() {
@@ -580,7 +581,7 @@
             // 檢查 LightweightCharts 是否可用
             if (typeof LightweightCharts !== 'undefined') {
                 console.log('LightweightCharts loaded successfully');
-                initTradingViewChart();
+                loadTradingViewChart();
             } else {
                 console.error('LightweightCharts not available');
                 document.getElementById('tradingview-chart').innerHTML = '<div style="color: red; padding: 20px;">TradingView 圖表加載失敗</div>';
@@ -589,9 +590,20 @@
             getPrediction();
         });
         
-        function initTradingViewChart() {
+        async function loadTradingViewChart() {
             try {
                 const container = document.getElementById('tradingview-chart');
+                container.innerHTML = '<div class="loading">正在加載 Binance 實時數據</div>';
+                
+                // 從 Binance API 取得 1 小時 K 線資料
+                const response = await fetch(`${BINANCE_API}/klines?symbol=${currentCoin}&interval=1h&limit=24`);
+                
+                if (!response.ok) {
+                    throw new Error('無法連接 Binance API');
+                }
+                
+                const klines = await response.json();
+                console.log(`已下載 ${currentCoin} 的 24 根 1 小時 K 線`);
                 
                 // 清空容器
                 container.innerHTML = '';
@@ -625,28 +637,14 @@
                     wickUpColor: '#4CAF50',
                 });
                 
-                const now = Math.floor(Date.now() / 1000);
-                const data = [];
-                let basePrice = 42000;
-                
-                for (let i = 20; i >= 0; i--) {
-                    const time = now - i * 3600;
-                    const change = Math.random() * 1000 - 500;
-                    const open = basePrice;
-                    const close = basePrice + change;
-                    const high = Math.max(open, close) + Math.random() * 500;
-                    const low = Math.min(open, close) - Math.random() * 500;
-                    
-                    data.push({
-                        time,
-                        open: Math.round(open * 100) / 100,
-                        high: Math.round(high * 100) / 100,
-                        low: Math.round(low * 100) / 100,
-                        close: Math.round(close * 100) / 100,
-                    });
-                    
-                    basePrice = close;
-                }
+                // 轉換 Binance K 線資料為 LightweightCharts 格式
+                const data = klines.map(kline => ({
+                    time: Math.floor(kline[0] / 1000), // 時間戳轉換為秒
+                    open: parseFloat(kline[1]),
+                    high: parseFloat(kline[2]),
+                    low: parseFloat(kline[3]),
+                    close: parseFloat(kline[4]),
+                }));
                 
                 candlestickSeries.setData(data);
                 chart.timeScale().fitContent();
@@ -658,16 +656,19 @@
                     }
                 });
                 
-                console.log('TradingView chart initialized successfully');
+                console.log('TradingView chart initialized successfully with Binance data');
             } catch (error) {
-                console.error('Error initializing TradingView chart:', error);
-                document.getElementById('tradingview-chart').innerHTML = `<div style="color: red; padding: 20px;">圖表初始化失敗: ${error.message}</div>`;
+                console.error('Error loading TradingView chart:', error);
+                document.getElementById('tradingview-chart').innerHTML = `<div style="color: red; padding: 20px;">圖表加載失敗: ${error.message}</div>`;
             }
         }
         
         async function getPrediction() {
             const coin = document.getElementById('coinSelect').value;
             currentCoin = coin;
+            
+            // 從新的幣種中重新加載 K 線
+            await loadTradingViewChart();
             
             const btn = document.getElementById('predictBtn');
             btn.disabled = true;
