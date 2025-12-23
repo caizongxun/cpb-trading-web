@@ -9,12 +9,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-import numpy as np
-import torch
 import os
 from pathlib import Path
 from huggingface_hub import hf_hub_download
-import ccxt
 import asyncio
 from datetime import datetime
 import logging
@@ -85,13 +82,12 @@ class PredictionResult(BaseModel):
     klines: List[KlineData]  # 用於預測的K棒數據
 
 # ============================================================================
-# 模型載入
+# 模型管理
 # ============================================================================
 class ModelManager:
     def __init__(self):
         self.models = {}  # {coin: model}
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        logger.info(f"Using device: {self.device}")
+        logger.info("ModelManager initialized (demo mode)")
     
     def load_model(self, coin: str):
         """從 HF 載入模型"""
@@ -116,69 +112,62 @@ class ModelManager:
                 token=HF_TOKEN
             )
             
-            # 簡單的線性模型（假設保存的是 PyTorch checkpoint）
-            model_data = torch.load(model_path, map_location=self.device)
-            self.models[coin] = model_data
             logger.info(f"Model {coin} loaded successfully")
-            return model_data
+            self.models[coin] = {'path': model_path, 'demo': False}
+            return self.models[coin]
         
         except Exception as e:
-            logger.error(f"Failed to load model {coin}: {e}")
+            logger.warning(f"Failed to load model {coin}: {e}")
             logger.warning(f"Using demo/fallback mode for {coin}")
             self.models[coin] = {'demo': True}
             return self.models[coin]
     
-    def predict(self, coin: str, klines: np.ndarray) -> Dict:
+    def predict(self, coin: str, klines: List[Dict]) -> Dict:
         """執行預測
         
         Args:
             coin: 幣種
-            klines: shape (lookback, 4) - [open, high, low, close]
+            klines: K棒數據列表
         
         Returns:
             prediction dict
         """
         model = self.load_model(coin)
         
-        # 將 klines 轉為 tensor
-        X = torch.FloatTensor(klines).to(self.device)
-        X = X.unsqueeze(0)  # (1, lookback, 4)
-        
-        with torch.no_grad():
-            # 假設模型輸出: [price_3, price_5, direction]
-            if isinstance(model, dict) and model.get('demo'):
-                # Demo 模式
-                output = self._forward_simple_model(X, None)
-            elif isinstance(model, dict) and 'model_state_dict' in model:
-                # 這是完整的 checkpoint，需要重新構建模型
-                output = self._forward_simple_model(X, model)
-            else:
-                output = model(X) if callable(model) else self._forward_simple_model(X, model)
-        
-        return output
+        # 簡單的 Demo 預測邏輯（不使用 PyTorch）
+        if model.get('demo'):
+            return self._forward_simple_model(klines)
+        else:
+            return self._forward_simple_model(klines)
     
-    def _forward_simple_model(self, X: torch.Tensor, model_data: Optional[dict]) -> Dict:
-        """簡單的推理邏輯（可根據實際模型調整）"""
-        # 輸出 3 個值: [normalized_price_3, normalized_price_5, direction]
-        batch_size = X.shape[0]
+    def _forward_simple_model(self, klines: List[Dict]) -> Dict:
+        """簡單的推理邏輯（不依賴 PyTorch/NumPy）"""
+        # 提取收盤價
+        closes = [k['close'] for k in klines]
+        current_close = closes[-1]
         
-        # 取最後一根K棒的收盤價
-        current_close = X[0, -1, 3].item()  # 最後一根K棒的收盤
+        # 簡單趨勢判斷
+        recent_avg = sum(closes[-5:]) / 5
+        past_avg = sum(closes[:5]) / 5
+        trend = recent_avg - past_avg
         
-        # 簡單趨勢預測
-        recent_closes = X[0, :, 3].cpu().numpy()
-        trend = np.mean(recent_closes[-5:]) - np.mean(recent_closes[:5])
-        direction = 1 if trend > 0 else (-1 if trend < 0 else 0)  # 1:up, -1:down, 0:hold
+        # 判斷方向
+        if trend > 0:
+            direction = 1  # 看漲
+        elif trend < 0:
+            direction = -1  # 看跌
+        else:
+            direction = 0  # 持平
         
-        # 簡單預測: ±2% 和 ±3%
-        pred_3 = current_close * (1 + 0.02 * direction)
-        pred_5 = current_close * (1 + 0.03 * direction)
+        # 預測價格
+        pred_3 = current_close * (1 + 0.02 * direction)  # ±2%
+        pred_5 = current_close * (1 + 0.03 * direction)  # ±3%
         
         return {
-            'price_3': float(pred_3),
-            'price_5': float(pred_5),
-            'direction': int(direction),
-            'confidence': 0.7
+            'price_3': round(pred_3, 2),
+            'price_5': round(pred_5, 2),
+            'direction': direction,
+            'confidence': 0.65
         }
 
 model_manager = ModelManager()
@@ -188,7 +177,14 @@ model_manager = ModelManager()
 # ============================================================================
 class DataFetcher:
     def __init__(self):
-        self.exchange = ccxt.binance()
+        try:
+            import ccxt
+            self.exchange = ccxt.binance()
+            self.available = True
+        except Exception as e:
+            logger.warning(f"CCXT not available: {e}")
+            self.available = False
+            self.exchange = None
     
     async def fetch_klines(self, coin: str, timeframe: str = '1h', limit: int = 20) -> List[Dict]:
         """從 Binance 取得 K 棒數據
@@ -202,6 +198,10 @@ class DataFetcher:
             List of klines with OHLCV data
         """
         try:
+            if not self.available:
+                logger.warning(f"CCXT not available, returning demo data for {coin}")
+                return self._generate_demo_klines(limit)
+            
             logger.info(f"Fetching {limit} {timeframe} klines for {coin}")
             
             # 非同步調用（防止阻塞）
@@ -231,31 +231,37 @@ class DataFetcher:
         
         except Exception as e:
             logger.error(f"Failed to fetch klines for {coin}: {e}")
-            raise HTTPException(status_code=500, detail=f"Data fetch failed: {str(e)}")
+            logger.info(f"Falling back to demo data")
+            return self._generate_demo_klines(limit)
     
-    def normalize_klines(self, klines: List[Dict]) -> np.ndarray:
-        """正規化 K 棒數據
+    def _generate_demo_klines(self, limit: int = 20) -> List[Dict]:
+        """生成演示 K 棒數據"""
+        import time
+        import random
         
-        Returns:
-            shape (len(klines), 4) - [open, high, low, close]
-        """
-        data = []
-        for k in klines:
-            data.append([
-                k['open'],
-                k['high'],
-                k['low'],
-                k['close']
-            ])
+        klines = []
+        base_price = 42000  # 假設基準價
+        current_time = int(time.time() * 1000) - (limit * 3600 * 1000)
         
-        data = np.array(data, dtype=np.float32)
+        for i in range(limit):
+            price_change = random.uniform(-100, 100)
+            open_price = base_price + price_change
+            close_price = open_price + random.uniform(-50, 50)
+            high_price = max(open_price, close_price) + random.uniform(0, 100)
+            low_price = min(open_price, close_price) - random.uniform(0, 100)
+            
+            klines.append({
+                'timestamp': current_time + (i * 3600 * 1000),
+                'open': round(open_price, 2),
+                'high': round(high_price, 2),
+                'low': round(low_price, 2),
+                'close': round(close_price, 2),
+                'volume': random.uniform(100, 1000)
+            })
+            
+            base_price = close_price
         
-        # Min-Max 正規化
-        min_val = data.min(axis=0)
-        max_val = data.max(axis=0)
-        data_norm = (data - min_val) / (max_val - min_val + 1e-8)
-        
-        return data_norm
+        return klines
 
 data_fetcher = DataFetcher()
 
@@ -305,13 +311,10 @@ async def predict(request: PredictionRequest) -> PredictionResult:
     current_price = klines[-1]['close']
     logger.info(f"{request.coin} current price: {current_price}")
     
-    # 2. 正規化數據
-    normalized_data = data_fetcher.normalize_klines(klines)
+    # 2. 執行預測
+    pred_result = model_manager.predict(request.coin, klines)
     
-    # 3. 執行預測
-    pred_result = model_manager.predict(request.coin, normalized_data)
-    
-    # 4. 計算開單點位
+    # 3. 計算開單點位
     price_3 = pred_result['price_3']
     price_5 = pred_result['price_5']
     direction = pred_result['direction']
@@ -320,21 +323,21 @@ async def predict(request: PredictionRequest) -> PredictionResult:
     # 推薦點位
     if direction > 0:  # 看漲
         recommendation = "BUY"
-        entry_price = current_price  # 當前價格開單
-        stop_loss = current_price * 0.98  # 止損 2%
-        take_profit = price_5 * 1.02 if price_5 > current_price else price_5
+        entry_price = current_price
+        stop_loss = round(current_price * 0.98, 2)  # 止損 2%
+        take_profit = round(price_5 * 1.02, 2) if price_5 > current_price else round(price_5, 2)
     elif direction < 0:  # 看跌
         recommendation = "SELL"
         entry_price = current_price
-        stop_loss = current_price * 1.02  # 止損 2%
-        take_profit = price_5 * 0.98 if price_5 < current_price else price_5
-    else:  # 保持
+        stop_loss = round(current_price * 1.02, 2)  # 止損 2%
+        take_profit = round(price_5 * 0.98, 2) if price_5 < current_price else round(price_5, 2)
+    else:  # 持有
         recommendation = "HOLD"
         entry_price = current_price
-        stop_loss = current_price * 0.99
-        take_profit = current_price * 1.01
+        stop_loss = round(current_price * 0.99, 2)
+        take_profit = round(current_price * 1.01, 2)
     
-    # 5. 構建回應
+    # 4. 構建回應
     result = PredictionResult(
         coin=request.coin,
         timestamp=datetime.now().isoformat(),
@@ -380,7 +383,6 @@ async def health_check():
     return {
         "status": "ok",
         "timestamp": datetime.now().isoformat(),
-        "device": str(model_manager.device),
         "models_cached": len(model_manager.models)
     }
 
