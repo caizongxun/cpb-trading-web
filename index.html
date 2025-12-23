@@ -280,6 +280,49 @@
             color: var(--text);
         }
         
+        .volatility-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .volatility-box {
+            background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);
+            color: white;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            border: 2px solid transparent;
+        }
+        
+        .volatility-box.low {
+            background: linear-gradient(135deg, #4CAF50 0%, #388E3C 100%);
+        }
+        
+        .volatility-box.medium {
+            background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+        }
+        
+        .volatility-box.high {
+            background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+        }
+        
+        .volatility-box label {
+            display: block;
+            font-size: 11px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        
+        .volatility-box .value {
+            display: block;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
         .klines-chart-container {
             position: relative;
             height: 300px;
@@ -344,6 +387,7 @@
             gap: 10px;
             border-bottom: 2px solid var(--light);
             margin-bottom: 15px;
+            flex-wrap: wrap;
         }
         
         .tab-btn {
@@ -385,7 +429,7 @@
     <div class="container">
         <header>
             <h1>CPB 交易預測系統</h1>
-            <p>實時加密貨幣K線圖表 + AI預測信號 + 交易開倉建議</p>
+            <p>實時加密貨幣K線圖表 + AI預測信號 + 波動率預測 + 交易開倉建議</p>
         </header>
         
         <div class="control-panel">
@@ -426,6 +470,16 @@
         <!-- 完整寬度: 預測圖表 -->
         <div class="grid" style="grid-template-columns: 1fr;">
             <div class="card">
+                <h2>波動率預測走勢</h2>
+                <div class="prediction-chart-container">
+                    <canvas id="volatilityChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 下一個區段: 新須文圖表 -->
+        <div class="grid" style="grid-template-columns: 1fr;">
+            <div class="card">
                 <h2>價格預測走勢</h2>
                 <div class="tabs">
                     <button class="tab-btn active" onclick="switchTab('prediction')">價格預測</button>
@@ -455,34 +509,26 @@
     </div>
     
     <footer>
-        <p>CPB Trading Web v1.0 | 24/7 加密貨幣實時分析</p>
+        <p>CPB Trading Web v1.0 | 24/7 加密貨幣實時分析 + 波動率預測</p>
     </footer>
     
     <script>
-        // ========================================================================
-        // 全局變量
-        // ========================================================================
         let predictionChart = null;
         let klinesChart = null;
         let volumeChart = null;
+        let volatilityChart = null;
         let currentCoin = 'BTCUSDT';
         let currentPrediction = null;
         let autoRefreshInterval = null;
         
         const API_BASE = 'http://localhost:8000';
         
-        // ========================================================================
-        // 初始化
-        // ========================================================================
         document.addEventListener('DOMContentLoaded', function() {
             console.log('Page loaded');
             initTradingViewChart();
             getPrediction();
         });
         
-        // ========================================================================
-        // TradingView 圖表初始化
-        // ========================================================================
         function initTradingViewChart() {
             const container = document.getElementById('tradingview-chart');
             const width = container.clientWidth;
@@ -500,12 +546,8 @@
                     textColor: '#333',
                 },
                 grid: {
-                    horzLines: {
-                        color: '#f0f0f0',
-                    },
-                    vertLines: {
-                        color: '#f0f0f0',
-                    },
+                    horzLines: { color: '#f0f0f0' },
+                    vertLines: { color: '#f0f0f0' },
                 },
             });
             
@@ -518,7 +560,6 @@
                 wickUpColor: '#4CAF50',
             });
             
-            // 生成示例數據
             const now = Math.floor(Date.now() / 1000);
             const data = [];
             let basePrice = 42000;
@@ -545,16 +586,12 @@
             candlestickSeries.setData(data);
             chart.timeScale().fitContent();
             
-            // 窗口大小調整
             window.addEventListener('resize', () => {
                 const newWidth = container.clientWidth;
                 chart.applyOptions({ width: newWidth });
             });
         }
         
-        // ========================================================================
-        // 獲取預測
-        // ========================================================================
         async function getPrediction() {
             const coin = document.getElementById('coinSelect').value;
             currentCoin = coin;
@@ -570,9 +607,7 @@
             try {
                 const response = await fetch(`${API_BASE}/predict`, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         coin: coin,
                         lookback_periods: 20,
@@ -580,9 +615,7 @@
                     }),
                 });
                 
-                if (!response.ok) {
-                    throw new Error(`API error: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`API error: ${response.status}`);
                 
                 const data = await response.json();
                 currentPrediction = data;
@@ -591,12 +624,13 @@
                 updatePredictionChart(data);
                 updateKlinesChart(data);
                 updateVolumeChart(data);
+                updateVolatilityChart(data);
                 
                 showSuccess(`${coin} 預測已更新`);
             } catch (error) {
                 console.error('Error:', error);
                 showError(`預測失敗: ${error.message}`);
-                predContent.innerHTML = '<div class="error">無法連接後端，請確保後端已啟動</div>';
+                predContent.innerHTML = '<div class="error">無法連接後端</div>';
             } finally {
                 btn.disabled = false;
                 btn.classList.remove('loading');
@@ -604,10 +638,13 @@
             }
         }
         
-        // ========================================================================
-        // 顯示預測結果
-        // ========================================================================
         function displayPrediction(data) {
+            const getVolatilityLevel = (vol) => {
+                if (vol < 1.0) return '低';
+                if (vol < 2.5) return '中';
+                return '高';
+            };
+            
             const html = `
                 <div class="stats-grid">
                     <div class="stat-box">
@@ -652,14 +689,85 @@
                         <span class="value">$${data.take_profit.toFixed(2)}</span>
                     </div>
                 </div>
+                
+                <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #f0f0f0;">
+                    <h3 style="margin-bottom: 10px;">6ce2動率計算</h3>
+                    <div class="volatility-grid">
+                        <div class="volatility-box ${data.volatility.volatility_level === '低' ? 'low' : data.volatility.volatility_level === '中' ? 'medium' : 'high'}">
+                            <label>當前波動率</label>
+                            <span class="value">${data.volatility.current.toFixed(2)}%</span>
+                        </div>
+                        <div class="volatility-box">
+                            <label>3K線預測</label>
+                            <span class="value">${data.volatility.predicted_3.toFixed(2)}%</span>
+                        </div>
+                        <div class="volatility-box">
+                            <label>5K線預測</label>
+                            <span class="value">${data.volatility.predicted_5.toFixed(2)}%</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px; padding: 10px; background: #f5f5f5; border-radius: 6px; text-align: center;">
+                        <p style="color: #666; font-size: 12px; margin: 0;">ATR(14): <strong>$${data.volatility.atr_14.toFixed(2)}</strong></p>
+                    </div>
+                </div>
             `;
             
             document.getElementById('predictionContent').innerHTML = html;
         }
         
-        // ========================================================================
-        // 更新預測圖表
-        // ========================================================================
+        function updateVolatilityChart(data) {
+            const ctx = document.getElementById('volatilityChart');
+            
+            if (volatilityChart) {
+                volatilityChart.destroy();
+            }
+            
+            volatilityChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['當前', '3K線後', '5K線後'],
+                    datasets: [
+                        {
+                            label: '波動率 (%)',
+                            data: [
+                                data.volatility.current,
+                                data.volatility.predicted_3,
+                                data.volatility.predicted_5
+                            ],
+                            borderColor: '#9C27B0',
+                            backgroundColor: 'rgba(156, 39, 176, 0.1)',
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointRadius: 6,
+                            pointBackgroundColor: ['#2196F3', '#FF9800', '#f44336'],
+                            pointBorderColor: '#fff',
+                            pointBorderWidth: 2,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                font: { size: 12 },
+                                padding: 15,
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: { display: true, text: '波動率 (%)' }
+                        }
+                    }
+                }
+            });
+        }
+        
         function updatePredictionChart(data) {
             const ctx = document.getElementById('predictionChart');
             
@@ -716,9 +824,6 @@
             });
         }
         
-        // ========================================================================
-        // 更新K線圖表
-        // ========================================================================
         function updateKlinesChart(data) {
             const ctx = document.getElementById('klinesChart');
             
@@ -726,7 +831,7 @@
                 klinesChart.destroy();
             }
             
-            const klines = data.klines.slice(-15);  // 最近15根
+            const klines = data.klines.slice(-15);
             
             klinesChart = new Chart(ctx, {
                 type: 'bar',
@@ -793,9 +898,6 @@
             });
         }
         
-        // ========================================================================
-        // 更新交易量圖表
-        // ========================================================================
         function updateVolumeChart(data) {
             const ctx = document.getElementById('volumeChart');
             
@@ -844,9 +946,6 @@
             });
         }
         
-        // ========================================================================
-        // 標籤頁切換
-        // ========================================================================
         function switchTab(tabName) {
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
@@ -859,9 +958,6 @@
             event.target.classList.add('active');
         }
         
-        // ========================================================================
-        // 自動刷新
-        // ========================================================================
         function autoRefresh() {
             const btn = document.getElementById('refreshBtn');
             
@@ -880,9 +976,6 @@
             }
         }
         
-        // ========================================================================
-        // 消息提示
-        // ========================================================================
         function showError(message) {
             const errorEl = document.getElementById('errorMsg');
             errorEl.textContent = message;
