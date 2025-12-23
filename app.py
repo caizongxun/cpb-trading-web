@@ -15,6 +15,7 @@ from huggingface_hub import hf_hub_download
 import asyncio
 from datetime import datetime
 import logging
+import math
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO)
@@ -44,7 +45,7 @@ REPO_ID = f"{HF_USERNAME}/cpbmodel"
 MODEL_CACHE_DIR = Path('./models_cache')
 MODEL_CACHE_DIR.mkdir(exist_ok=True)
 
-# 支持的幣種
+# 支援的幣種
 SUPPORTED_COINS = [
     'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT',
     'XRPUSDT', 'DOGEUSDT', 'LTCUSDT', 'LINKUSDT', 'UNIUSDT',
@@ -68,6 +69,13 @@ class KlineData(BaseModel):
     close: float
     volume: float
 
+class VolatilityData(BaseModel):
+    current: float  # 當前波動率 (%)
+    predicted_3: float  # 3根K棒後預測波動率 (%)
+    predicted_5: float  # 5根K棒後預測波動率 (%)
+    volatility_level: str  # "低" / "中" / "高"
+    atr_14: float  # 14根K棒平均真實幅度
+
 class PredictionResult(BaseModel):
     coin: str
     timestamp: str
@@ -79,6 +87,7 @@ class PredictionResult(BaseModel):
     stop_loss: float  # 止損點
     take_profit: float  # 止盈點
     confidence: float  # 信心指數 (0-1)
+    volatility: VolatilityData  # 波動率資料
     klines: List[KlineData]  # 用於預測的K棒數據
 
 # ============================================================================
@@ -144,14 +153,26 @@ class ModelManager:
         """簡單的推理邏輯（不依賴 PyTorch/NumPy）"""
         # 提取收盤價
         closes = [k['close'] for k in klines]
+        highs = [k['high'] for k in klines]
+        lows = [k['low'] for k in klines]
         current_close = closes[-1]
         
-        # 簡單趨勢判斷
+        # 計算價格變化率
+        price_changes = []
+        for i in range(1, len(closes)):
+            change = (closes[i] - closes[i-1]) / closes[i-1] * 100
+            price_changes.append(change)
+        
+        # 計算標準差（波動率）
+        mean_change = sum(price_changes) / len(price_changes) if price_changes else 0
+        variance = sum((x - mean_change) ** 2 for x in price_changes) / len(price_changes) if price_changes else 0
+        volatility_current = math.sqrt(variance)  # 當前波動率 (%)
+        
+        # 趨勢判斷
         recent_avg = sum(closes[-5:]) / 5
         past_avg = sum(closes[:5]) / 5
         trend = recent_avg - past_avg
         
-        # 判斷方向
         if trend > 0:
             direction = 1  # 看漲
         elif trend < 0:
@@ -163,11 +184,45 @@ class ModelManager:
         pred_3 = current_close * (1 + 0.02 * direction)  # ±2%
         pred_5 = current_close * (1 + 0.03 * direction)  # ±3%
         
+        # 計算平均真實幅度 (ATR)
+        true_ranges = []
+        for i in range(len(klines)):
+            high = highs[i]
+            low = lows[i]
+            prev_close = closes[i-1] if i > 0 else low
+            
+            tr = max(
+                high - low,
+                abs(high - prev_close),
+                abs(low - prev_close)
+            )
+            true_ranges.append(tr)
+        
+        atr_14 = sum(true_ranges[-14:]) / min(14, len(true_ranges)) if true_ranges else 0
+        
+        # 預測波動率（未來可能波動）
+        # 基於歷史波動率和趨勢強度
+        volatility_pred_3 = volatility_current * 1.05  # 假設向上變化 5%
+        volatility_pred_5 = volatility_current * 1.10  # 假設向上變化 10%
+        
+        # 波動率等級
+        if volatility_current < 1.0:
+            vol_level = "低"
+        elif volatility_current < 2.5:
+            vol_level = "中"
+        else:
+            vol_level = "高"
+        
         return {
             'price_3': round(pred_3, 2),
             'price_5': round(pred_5, 2),
             'direction': direction,
-            'confidence': 0.65
+            'confidence': 0.65,
+            'volatility_current': round(volatility_current, 4),
+            'volatility_pred_3': round(volatility_pred_3, 4),
+            'volatility_pred_5': round(volatility_pred_5, 4),
+            'volatility_level': vol_level,
+            'atr_14': round(atr_14, 2),
         }
 
 model_manager = ModelManager()
@@ -284,7 +339,7 @@ async def root():
 
 @app.get("/coins")
 async def get_coins():
-    """列出所有支持的幣種"""
+    """列出所有支援的幣種"""
     return {
         "coins": SUPPORTED_COINS,
         "total": len(SUPPORTED_COINS)
@@ -319,6 +374,11 @@ async def predict(request: PredictionRequest) -> PredictionResult:
     price_5 = pred_result['price_5']
     direction = pred_result['direction']
     confidence = pred_result['confidence']
+    volatility_current = pred_result['volatility_current']
+    volatility_pred_3 = pred_result['volatility_pred_3']
+    volatility_pred_5 = pred_result['volatility_pred_5']
+    volatility_level = pred_result['volatility_level']
+    atr_14 = pred_result['atr_14']
     
     # 推薦點位
     if direction > 0:  # 看漲
@@ -349,6 +409,13 @@ async def predict(request: PredictionRequest) -> PredictionResult:
         stop_loss=stop_loss,
         take_profit=take_profit,
         confidence=confidence,
+        volatility=VolatilityData(
+            current=volatility_current * 100,  # 轉換為百分比
+            predicted_3=volatility_pred_3 * 100,
+            predicted_5=volatility_pred_5 * 100,
+            volatility_level=volatility_level,
+            atr_14=atr_14
+        ),
         klines=[
             KlineData(
                 time=datetime.fromtimestamp(k['timestamp']/1000).isoformat(),
