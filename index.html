@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CPB 交易預測系統</title>
+    <title>CPB 交易預測系統 - V2 模型</title>
     
     <!-- TradingView Lightweight Charts -->
     <script src="https://unpkg.com/lightweight-charts@4.0.0/dist/lightweight-charts.production.js"></script>
@@ -51,13 +51,26 @@
         
         header h1 {
             color: var(--primary);
-            margin-bottom: 10px;
+            margin-bottom: 5px;
             font-size: 28px;
+        }
+        
+        .model-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+            letter-spacing: 1px;
         }
         
         header p {
             color: #666;
             font-size: 14px;
+            margin-top: 8px;
         }
         
         .control-panel {
@@ -91,7 +104,7 @@
             font-size: 14px;
             cursor: pointer;
             transition: border-color 0.3s;
-            min-width: 200px;
+            min-width: 220px;
         }
         
         select:hover, select:focus {
@@ -417,6 +430,16 @@
             display: block;
         }
         
+        .model-info {
+            background: #E3F2FD;
+            border: 1px solid #90CAF9;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 12px;
+            color: #1565C0;
+            margin-top: 10px;
+        }
+        
         footer {
             text-align: center;
             color: white;
@@ -429,40 +452,44 @@
 <body>
     <div class="container">
         <header>
-            <h1>CPB 交易預測系統</h1>
-            <p>實時加密貨幣K線圖表 + AI預測信號 + 波動率預測 + 交易建議點位</p>
+            <h1>
+                CPB 交易預測系統
+                <span class="model-badge">V2 模型</span>
+            </h1>
+            <p>實時加密貨幣K線圖表 + V2深度學習模型預測 + 波動率計算 + 交易建議點位</p>
         </header>
         
         <div class="control-panel">
             <div class="select-group">
                 <label>選擇幣種:</label>
                 <select id="coinSelect">
-                    <optgroup label="主流幣">
+                    <optgroup label="主流幣 (3)">
                         <option value="BTCUSDT">比特幣 (BTC)</option>
                         <option value="ETHUSDT">以太坊 (ETH)</option>
                         <option value="BNBUSDT">幣安幣 (BNB)</option>
                     </optgroup>
-                    <optgroup label="主流山寨幣">
+                    <optgroup label="主流山寨幣 (5)">
                         <option value="ADAUSDT">卡爾達諾 (ADA)</option>
                         <option value="SOLUSDT">索拉納 (SOL)</option>
                         <option value="XRPUSDT">瑞波幣 (XRP)</option>
                         <option value="DOGEUSDT">狗狗幣 (DOGE)</option>
-                        <option value="LTCUSDT">萊特幣 (LTC)</option>
                         <option value="LINKUSDT">Chainlink (LINK)</option>
-                        <option value="UNIUSDT">Uniswap (UNI)</option>
                     </optgroup>
-                    <optgroup label="DeFi & Layer2">
+                    <optgroup label="DeFi & Layer2 (5)">
                         <option value="AVAXUSDT">雪崩幣 (AVAX)</option>
+                        <option value="MATICUSDT">Polygon (MATIC)</option>
                         <option value="ATOMUSDT">Cosmos (ATOM)</option>
-                        <option value="VETUSDT">VeChain (VET)</option>
-                        <option value="GRTUSDT">The Graph (GRT)</option>
-                        <option value="AXSUSDT">Axie Infinity (AXS)</option>
+                        <option value="NEARUSDT">NEAR (NEAR)</option>
+                        <option value="FTMUSDT">Fantom (FTM)</option>
                     </optgroup>
-                    <optgroup label="其他">
-                        <option value="BCHUSDT">比特幣現金 (BCH)</option>
-                        <option value="MANAUSDT">Decentraland (MANA)</option>
-                        <option value="SANDUSDT">The Sandbox (SAND)</option>
-                        <option value="XLMUSDT">恆星幣 (XLM)</option>
+                    <optgroup label="L2 & 其他 (7)">
+                        <option value="ARBUSDT">Arbitrum (ARB)</option>
+                        <option value="OPUSDT">Optimism (OP)</option>
+                        <option value="LITUSDT">Litecoin (LIT)</option>
+                        <option value="STXUSDT">Stacks (STX)</option>
+                        <option value="INJUSDT">Injective (INJ)</option>
+                        <option value="LUNCUSDT">Luna Classic (LUNC)</option>
+                        <option value="LUNAUSDT">Luna (LUNA)</option>
                     </optgroup>
                 </select>
             </div>
@@ -482,7 +509,7 @@
             
             <!-- 右側: 預測統計 -->
             <div class="card">
-                <h2>預測結果</h2>
+                <h2>V2 模型預測結果</h2>
                 <div id="predictionContent">
                     <div class="loading">等待預測中</div>
                 </div>
@@ -531,7 +558,7 @@
     </div>
     
     <footer>
-        <p>CPB Trading Web v1.0 | 24/7 加密貨幣實時分析 + 波動率預測</p>
+        <p>CPB Trading Web v2.0 | V2 深度學習模型 | 20種加密貨幣支援 | 24/7 實時分析</p>
     </footer>
     
     <script>
@@ -624,7 +651,7 @@
             btn.textContent = '生成中...';
             
             const predContent = document.getElementById('predictionContent');
-            predContent.innerHTML = '<div class="loading">正在計算預測</div>';
+            predContent.innerHTML = '<div class="loading">正在計算V2預測</div>';
             
             try {
                 const response = await fetch(`${API_BASE}/predict`, {
@@ -648,11 +675,11 @@
                 updateVolumeChart(data);
                 updateVolatilityChart(data);
                 
-                showSuccess(`${coin} 預測已更新`);
+                showSuccess(`${coin} V2模型預測已更新`);
             } catch (error) {
                 console.error('Error:', error);
                 showError(`預測失敗: ${error.message}`);
-                predContent.innerHTML = '<div class="error">無法連接後端</div>';
+                predContent.innerHTML = '<div class="error">無法連接後端 API</div>';
             } finally {
                 btn.disabled = false;
                 btn.classList.remove('loading');
@@ -662,6 +689,10 @@
         
         function displayPrediction(data) {
             const html = `
+                <div class="model-info">
+                    模型版本: ${data.model_version} | 輸入: 20根K線 | 輸出: [價格, 波動率]
+                </div>
+                
                 <div class="stats-grid">
                     <div class="stat-box">
                         <h3>當前價格</h3>
