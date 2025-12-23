@@ -430,6 +430,7 @@
                 <div class="tabs">
                     <button class="tab-btn active" onclick="switchTab('prediction')">價格預測</button>
                     <button class="tab-btn" onclick="switchTab('klines')">K線數據</button>
+                    <button class="tab-btn" onclick="switchTab('volume')">交易量</button>
                 </div>
                 
                 <div id="prediction" class="tab-content active">
@@ -443,6 +444,12 @@
                         <canvas id="klinesChart"></canvas>
                     </div>
                 </div>
+                
+                <div id="volume" class="tab-content">
+                    <div class="klines-chart-container">
+                        <canvas id="volumeChart"></canvas>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -453,10 +460,11 @@
     
     <script>
         // ========================================================================
-        // 全局變數
+        // 全局變量
         // ========================================================================
         let predictionChart = null;
         let klinesChart = null;
+        let volumeChart = null;
         let currentCoin = 'BTCUSDT';
         let currentPrediction = null;
         let autoRefreshInterval = null;
@@ -582,6 +590,7 @@
                 displayPrediction(data);
                 updatePredictionChart(data);
                 updateKlinesChart(data);
+                updateVolumeChart(data);
                 
                 showSuccess(`${coin} 預測已更新`);
             } catch (error) {
@@ -717,27 +726,52 @@
                 klinesChart.destroy();
             }
             
-            const klines = data.klines.slice(-20);  // 最近20根
+            const klines = data.klines.slice(-15);  // 最近15根
             
             klinesChart = new Chart(ctx, {
-                type: 'candlestick',
+                type: 'bar',
                 data: {
-                    labels: klines.map(k => {
-                        const date = new Date(k.time);
-                        return date.getHours() + ':00';
-                    }),
+                    labels: klines.map((k, i) => `${i + 1}`),
                     datasets: [
                         {
-                            label: 'OHLC',
-                            data: klines.map(k => ({
-                                x: k.time,
-                                o: k.open,
-                                h: k.high,
-                                l: k.low,
-                                c: k.close,
-                            })),
-                            borderColor: 'rgb(0, 150, 136)',
-                            backgroundColor: 'rgba(0, 150, 136, 0.5)',
+                            label: '開盤價',
+                            data: klines.map(k => k.open),
+                            borderColor: '#2196F3',
+                            backgroundColor: 'rgba(33, 150, 243, 0.6)',
+                            borderWidth: 1,
+                            order: 2,
+                        },
+                        {
+                            label: '收盤價',
+                            data: klines.map(k => k.close),
+                            borderColor: '#4CAF50',
+                            backgroundColor: 'rgba(76, 175, 80, 0.6)',
+                            borderWidth: 1,
+                            order: 2,
+                        },
+                        {
+                            label: '最高價',
+                            data: klines.map(k => k.high),
+                            type: 'line',
+                            borderColor: '#f44336',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.3,
+                            pointRadius: 0,
+                            order: 1,
+                        },
+                        {
+                            label: '最低價',
+                            data: klines.map(k => k.low),
+                            type: 'line',
+                            borderColor: '#FF9800',
+                            backgroundColor: 'transparent',
+                            borderWidth: 2,
+                            fill: false,
+                            tension: 0.3,
+                            pointRadius: 0,
+                            order: 1,
                         }
                     ]
                 },
@@ -745,7 +779,10 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     plugins: {
-                        legend: { display: false }
+                        legend: {
+                            display: true,
+                            labels: { font: { size: 11 } }
+                        }
                     },
                     scales: {
                         y: {
@@ -757,10 +794,60 @@
         }
         
         // ========================================================================
+        // 更新交易量圖表
+        // ========================================================================
+        function updateVolumeChart(data) {
+            const ctx = document.getElementById('volumeChart');
+            
+            if (volumeChart) {
+                volumeChart.destroy();
+            }
+            
+            const klines = data.klines.slice(-15);
+            
+            volumeChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: klines.map((k, i) => `${i + 1}`),
+                    datasets: [
+                        {
+                            label: '交易量',
+                            data: klines.map(k => k.volume),
+                            backgroundColor: klines.map((k, i) => 
+                                k.close >= k.open ? 'rgba(76, 175, 80, 0.7)' : 'rgba(244, 67, 54, 0.7)'
+                            ),
+                            borderColor: '#666',
+                            borderWidth: 1,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'x',
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: { font: { size: 12 } }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: '成交量'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        // ========================================================================
         // 標籤頁切換
         // ========================================================================
         function switchTab(tabName) {
-            // 隱藏所有標籤內容
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
@@ -768,7 +855,6 @@
                 btn.classList.remove('active');
             });
             
-            // 顯示選中的標籤
             document.getElementById(tabName).classList.add('active');
             event.target.classList.add('active');
         }
@@ -787,7 +873,7 @@
             } else {
                 autoRefreshInterval = setInterval(() => {
                     getPrediction();
-                }, 60000);  // 每60秒更新一次
+                }, 60000);
                 btn.style.opacity = '0.7';
                 btn.textContent = '停止刷新';
                 showSuccess('已啟用自動刷新 (每60秒)');
