@@ -52,9 +52,12 @@ ALL_MODELS/
     └── v2_model_LUNA_USDT.h5
 ```
 
-### 3. 運行後端
+### 3. 運行後端和前端
+
+**後端 Server (第一個终端覦窦)**
 
 ```bash
+cd cpb-trading-web
 python app.py
 ```
 
@@ -76,13 +79,26 @@ Docs: http://localhost:8000/docs
 ================================================================================
 ```
 
-### 4. 開啟前端
+**前端 Server (第二個终端覦窦)**
 
-在爆統器中打開:
+```bash
+cd cpb-trading-web
+python -m http.server 5000
+```
+
+結果：
+
+```
+Serving HTTP on 0.0.0.0 port 5000 (http://0.0.0.0:5000/) ...
+```
+
+### 4. 在爆統器中打開前端
 
 ```
 http://localhost:5000
 ```
+
+---
 
 ## API 端點
 
@@ -101,7 +117,7 @@ curl http://localhost:8000/coins
 ```
 
 ### POST /predict
-預渫 V2 模型
+預測 V2 模型
 
 ```bash
 curl -X POST http://localhost:8000/predict \
@@ -198,4 +214,5 @@ MIT License
 - **作者**: zongowo111
 
 ## 接觸方式
+
 日一有問題或建議，築開 Issue 或 Pull Request！
