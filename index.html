@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPB Trading Prediction - 交易信號推薦</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .subtitle {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .controls {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: grid;
+            grid-template-columns: 1fr 1fr auto auto;
+            gap: 15px;
+            align-items: end;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #444;
+            font-size: 0.95em;
+        }
+
+        select, input {
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        select {
+            cursor: pointer;
+            background: white;
+        }
+
+        button {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 1em;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .prediction-card {
+            background: white;
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            border-left: 5px solid #667eea;
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .prediction-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.3);
+        }
+
+        .coin-name {
+            font-size: 1.5em;
+            font-weight: 700;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        .price-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #eee;
+        }
+
+        .price-item {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+        }
+
+        .price-label {
+            font-size: 0.85em;
+            color: #777;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .price-value {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: #333;
+        }
+
+        .recommendation {
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-weight: 600;
+            font-size: 1.1em;
+        }
+
+        .recommendation.buy {
+            background: #d4edda;
+            color: #155724;
+            border: 2px solid #28a745;
+        }
+
+        .recommendation.sell {
+            background: #f8d7da;
+            color: #721c24;
+            border: 2px solid #dc3545;
+        }
+
+        .recommendation.hold {
+            background: #fff3cd;
+            color: #856404;
+            border: 2px solid #ffc107;
+        }
+
+        .trading-levels {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            font-size: 0.9em;
+        }
+
+        .trading-level {
+            padding: 12px;
+            border-radius: 6px;
+            background: #f8f9fa;
+            text-align: center;
+        }
+
+        .trading-level-label {
+            color: #777;
+            font-size: 0.8em;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+        }
+
+        .trading-level-value {
+            font-weight: 700;
+            color: #333;
+            font-size: 1.1em;
+        }
+
+        .confidence {
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        .confidence-bar {
+            width: 100%;
+            height: 6px;
+            background: #ddd;
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s;
+        }
+
+        .timestamp {
+            font-size: 0.8em;
+            color: #999;
+            margin-top: 15px;
+            text-align: right;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: white;
+            font-size: 1.2em;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top: 3px solid white;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 8px;
+            border: 2px solid #dc3545;
+            margin-bottom: 20px;
+        }
+
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 15px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        @media (max-width: 1024px) {
+            .controls {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .controls {
+                grid-template-columns: 1fr;
+            }
+
+            .results-grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 1.5em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CPB Trading Prediction</h1>
+            <p class="subtitle">實時加密貨幣交易信號推薦系統</p>
+        </header>
+
+        <div class="controls">
+            <div class="form-group">
+                <label for="coinSelect">選擇幣種</label>
+                <select id="coinSelect">
+                    <option value="BTCUSDT">Bitcoin (BTCUSDT)</option>
+                    <option value="ETHUSDT">Ethereum (ETHUSDT)</option>
+                    <option value="BNBUSDT">BNB (BNBUSDT)</option>
+                    <option value="ADAUSDT">Cardano (ADAUSDT)</option>
+                    <option value="SOLUSDT">Solana (SOLUSDT)</option>
+                    <option value="XRPUSDT">Ripple (XRPUSDT)</option>
+                    <option value="DOGEUSDT">Dogecoin (DOGEUSDT)</option>
+                    <option value="LTCUSDT">Litecoin (LTCUSDT)</option>
+                    <option value="LINKUSDT">Chainlink (LINKUSDT)</option>
+                    <option value="UNIUSDT">Uniswap (UNIUSDT)</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="lookbackPeriods">看回週期數</label>
+                <input type="number" id="lookbackPeriods" value="20" min="10" max="100" step="5">
+            </div>
+
+            <button onclick="predictSingle()">單幣種預測</button>
+            <button onclick="predictBatch()">批量預測全部</button>
+        </div>
+
+        <div id="resultsContainer"></div>
+    </div>
+
+    <script>
+        // ============================================================================
+        // API 設定
+        // ============================================================================
+        const API_BASE = 'http://localhost:8000';
+        const COINS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'SOLUSDT',
+                       'XRPUSDT', 'DOGEUSDT', 'LTCUSDT', 'LINKUSDT', 'UNIUSDT',
+                       'AVAXUSDT', 'ATOMUSDT', 'VETUSDT', 'GRTUSDT', 'AXSUSDT',
+                       'BCHUSDT', 'MANAUSDT', 'SANDUSDT', 'XLMUSDT'];
+
+        // ============================================================================
+        // 主要函數
+        // ============================================================================
+
+        async function predictSingle() {
+            const coin = document.getElementById('coinSelect').value;
+            const lookback = parseInt(document.getElementById('lookbackPeriods').value);
+            
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_BASE}/predict`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        coin: coin,
+                        lookback_periods: lookback,
+                        prediction_horizon: 5
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayResult(data);
+            } catch (error) {
+                showError(`預測失敗: ${error.message}`);
+                console.error('Error:', error);
+            }
+        }
+
+        async function predictBatch() {
+            showLoading(`正在批量預測 ${COINS.length} 個幣種...`);
+            
+            try {
+                const response = await fetch(`${API_BASE}/predict-batch`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(COINS)
+                });
+
+                if (!response.ok) {
+                    throw new Error(`API Error: ${response.status}`);
+                }
+
+                const data = await response.json();
+                displayResults(data);
+            } catch (error) {
+                showError(`批量預測失敗: ${error.message}`);
+                console.error('Error:', error);
+            }
+        }
+
+        function displayResult(result) {
+            displayResults([result]);
+        }
+
+        function displayResults(results) {
+            const container = document.getElementById('resultsContainer');
+            
+            if (!results || results.length === 0) {
+                container.innerHTML = '<div class="error">沒有預測結果</div>';
+                return;
+            }
+
+            let html = '<div class="results-grid">';
+            
+            for (const result of results) {
+                const recClass = result.recommendation.toLowerCase();
+                const confidence = (result.confidence * 100).toFixed(1);
+                const timestamp = new Date(result.timestamp).toLocaleString('zh-TW');
+
+                html += `
+                    <div class="prediction-card">
+                        <div class="coin-name">$${result.coin.replace('USDT', '')}</div>
+                        
+                        <div class="price-info">
+                            <div class="price-item">
+                                <div class="price-label">目前價格</div>
+                                <div class="price-value">$${result.current_price.toFixed(2)}</div>
+                            </div>
+                            <div class="price-item">
+                                <div class="price-label">3根K棒預測</div>
+                                <div class="price-value">$${result.predicted_price_3.toFixed(2)}</div>
+                            </div>
+                        </div>
+
+                        <div class="recommendation ${recClass}">
+                            ${result.recommendation}
+                        </div>
+
+                        <div class="trading-levels">
+                            <div class="trading-level">
+                                <div class="trading-level-label">開單點</div>
+                                <div class="trading-level-value">$${result.entry_price.toFixed(2)}</div>
+                            </div>
+                            <div class="trading-level">
+                                <div class="trading-level-label">止損</div>
+                                <div class="trading-level-value">$${result.stop_loss.toFixed(2)}</div>
+                            </div>
+                            <div class="trading-level">
+                                <div class="trading-level-label">止盈</div>
+                                <div class="trading-level-value">$${result.take_profit.toFixed(2)}</div>
+                            </div>
+                        </div>
+
+                        <div class="confidence">
+                            <div>信心指數: ${confidence}%</div>
+                            <div class="confidence-bar">
+                                <div class="confidence-fill" style="width: ${confidence}%"></div>
+                            </div>
+                        </div>
+
+                        <div class="timestamp">更新時間: ${timestamp}</div>
+                    </div>
+                `;
+            }
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function showLoading(message = '正在預測中...') {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <div>${message}</div>
+                </div>
+            `;
+        }
+
+        function showError(message) {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = `<div class="error">${message}</div>`;
+        }
+
+        // ============================================================================
+        // 初始化
+        // ============================================================================
+        window.addEventListener('DOMContentLoaded', async () => {
+            // 檢查 API 連線
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                if (response.ok) {
+                    const health = await response.json();
+                    console.log('API Status:', health);
+                }
+            } catch (error) {
+                console.warn('API 未連線，請確保 FastAPI 伺服器正在運行:', error);
+            }
+        });
+    </script>
+</body>
+</html>
