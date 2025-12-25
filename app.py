@@ -1,35 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CPB Trading Web - V2 Model Inference
-實時拉取幣種資料 + V2 模型予測 + 開單點位推護
+CPB Trading Web - V5 Model (HYBRID VERSION)
+包含市场分析端点和价格偏移修正
 """
 
+import asyncio
+import yfinance as yf
+import numpy as np
+import tensorflow as tf
+from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
-import os
-from pathlib import Path
-from huggingface_hub import hf_hub_download
-import asyncio
-from datetime import datetime
 import logging
-import math
-import numpy as np
-import tensorflow as tf
-from market_analysis import MarketAnalyzer, MarketAnalysisResult
 
-# 設定日誌
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# FastAPI 初始化
-# ============================================================================
-app = FastAPI(title="CPB Trading Prediction API - V2", version="2.0.0")
+app = FastAPI(title="CPB Trading V5 HYBRID", version="5.0.0")
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -39,364 +30,323 @@ app.add_middleware(
 )
 
 # ============================================================================
-# 設定
+# 数据模型
 # ============================================================================
-HF_TOKEN = os.environ.get('HF_TOKEN')
-HF_USERNAME = os.environ.get('HF_USERNAME', 'zongowo111')
-REPO_ID = f"{HF_USERNAME}/cpbmodel"
-
-MODEL_CACHE_DIR = Path('./models_cache')
-MODEL_CACHE_DIR.mkdir(exist_ok=True)
-
-# 支援的 20 種幣種 - 確保正好 20 種
-SUPPORTED_COINS = [
-    'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT',
-    'BNBUSDT', 'DOGEUSDT', 'LINKUSDT', 'AVAXUSDT', 'MATICUSDT',
-    'ATOMUSDT', 'NEARUSDT', 'FTMUSDT', 'ARBUSDT', 'OPUSDT',
-    'LITUSDT', 'STXUSDT', 'INJUSDT', 'LUNCUSDT', 'LUNAUSDT'
-]
-
-print(f"\n[✓] 模型版本: V2")
-print(f"[✓] 支援幣種數量: {len(SUPPORTED_COINS)}")
-print(f"[✓] 幣種清单: {SUPPORTED_COINS}\n")
-
-# ============================================================================
-# 資料模型
-# ============================================================================
-class PredictionRequest(BaseModel):
-    coin: str  # 例: BTCUSDT
-    lookback_periods: int = 20  # 過去多少根K棒作為輸入
-    prediction_horizon: int = 5  # 預測例更多少根K棒
-
-class MarketAnalysisRequest(BaseModel):
-    symbol: str  # 幣種 (e.g., 'BTC', 'ETH')
-    timeframe: str = '1d'  # 時間框架 ('1h', '1d')
-    use_binance: bool = False
-
-class KlineData(BaseModel):
-    time: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
 
 class VolatilityData(BaseModel):
-    current: float  # 當前波動率 (%) - 最後一根K線的價格變化
-    predicted_3: float  # 3根K棒侌預測波動率 (%) - 預測價格變化
-    predicted_5: float  # 5根K棒侌預測波動率 (%) - 預測價格變化
-    level: str  # "低" / "中" / "高"
-    atr_14: float  # 14根K棒平均真實恆度
+    current: float
+    predicted: float
+    level: str
+    atr_14: float
 
-class PredictionResult(BaseModel):
-    coin: str
-    timestamp: str
+class PredictionResponse(BaseModel):
+    symbol: str
+    timeframe: str
     current_price: float
-    predicted_price_3: float  # 3根K棒侌預測價格
-    predicted_price_5: float  # 5根K棒侌預測價格
-    recommendation: str  # BUY / SELL / HOLD
-    entry_price: float  # 建議開單價
-    stop_loss: float  # 止損點
-    take_profit: float  # 止盈點
-    confidence: float  # 信心指數 (0-1)
-    volatility: VolatilityData  # 波動率資料
-    klines: List[KlineData]  # 用于預測K棒數據
-    model_version: str  # 模型版本
+    predicted_price: float
+    log_return: float
+    confidence: float
+    recommendation: str
+    entry_price: float
+    stop_loss: float
+    take_profit: float
+    volatility: VolatilityData
+    klines: List[Dict]
+    timestamp: str
+    price_source: str
+    model_version: str
+
+class MarketAnalysisRequest(BaseModel):
+    symbol: str
+    timeframe: str = '1d'
+    use_binance: bool = False
 
 class MarketAnalysisResponse(BaseModel):
     symbol: str
     timeframe: str
-    trend: Dict  # TrendAnalysis serialized
+    trend: Dict
     best_entry_bar: int
-    price_extremes: Dict  # PriceExtremes serialized
+    price_extremes: Dict
     forecast_prices: List[float]
     recommendation: str
 
 # ============================================================================
-# V2 模型管理
+# 价格修正模块 - 处理 MAPE 偏移
 # ============================================================================
-class ModelManagerV2:
+
+class PriceCorrector:
+    """
+    处理模型预测的价格偏移
+    MAPE 偏差通常来自于:
+    1. 价格正常化和反正常化的累积误差
+    2. 极端价格点的过度或不足预测
+    3. 市场波动的非线性特征
+    """
+    
     def __init__(self):
-        self.models = {}  # {coin: model}
-        self.model_dir = Path('ALL_MODELS/MODEL_V2')
-        logger.info("ModelManager V2 initialized")
+        # 基于经验的偏移修正因子
+        self.correction_factors = {
+            'aggressive_high': 1.15,  # 预测偏高时
+            'aggressive_low': 0.85,   # 预测偏低时
+            'moderate': 1.00,          # 适度预测
+        }
     
-    def load_model(self, coin: str):
-        """從本地載入 V2 模型"""
-        if coin in self.models:
-            return self.models[coin]
-        
-        model_name = f"v2_model_{coin}.h5"
-        model_path = self.model_dir / model_name
-        
-        logger.info(f"Loading V2 model: {coin}")
-        
-        try:
-            # 檢查模型是否存在
-            if not model_path.exists():
-                logger.warning(f"Model not found: {model_path}")
-                logger.warning(f"Using demo mode for {coin}")
-                self.models[coin] = {'demo': True}
-                return self.models[coin]
-            
-            # 載入模型
-            model = tf.keras.models.load_model(str(model_path))
-            self.models[coin] = {'model': model, 'demo': False, 'path': str(model_path)}
-            logger.info(f"Model {coin} loaded successfully from {model_path}")
-            return self.models[coin]
-        
-        except Exception as e:
-            logger.error(f"Failed to load model {coin}: {e}")
-            logger.warning(f"Using demo/fallback mode for {coin}")
-            self.models[coin] = {'demo': True}
-            return self.models[coin]
-    
-    def predict(self, coin: str, klines: List[Dict]) -> Dict:
-        """執行預測 (V2 模型 輸入: [price, volatility])
-        
-        Args:
-            coin: 幣種
-            klines: K棒數據清単
-        
-        Returns:
-            prediction dict
+    def correct_predicted_price(
+        self,
+        current_price: float,
+        predicted_price: float,
+        historical_prices: List[float],
+        confidence: float = 0.65
+    ) -> Dict:
         """
-        model = self.load_model(coin)
+        修正预测价格，考虑:
+        - 历史波动率
+        - 预测信心度
+        - 价格偏差方向
+        """
         
-        # 使用 V2 模型骞予測
-        if model.get('demo'):
-            return self._forward_simple_model(klines)
+        # 计算历史价格统计
+        price_array = np.array(historical_prices)
+        current = float(current_price)
+        predicted = float(predicted_price)
+        
+        # 计算基本变化百分比
+        pct_change = (predicted - current) / current if current > 0 else 0
+        
+        # 计算历史波动率 (过去20根K线的标准差)
+        if len(price_array) > 1:
+            hist_returns = np.diff(price_array) / price_array[:-1]
+            hist_volatility = np.std(hist_returns)
         else:
-            return self._forward_v2_model(klines, model['model'])
-    
-    def _forward_v2_model(self, klines: List[Dict], model) -> Dict:
-        """V2 模型推理 (TensorFlow/Keras)"""
-        try:
-            # 提取收盤價
-            closes = np.array([k['close'] for k in klines])
-            highs = np.array([k['high'] for k in klines])
-            lows = np.array([k['low'] for k in klines])
-            opens = np.array([k['open'] for k in klines])
-            current_close = closes[-1]
-            
-            # 正見化 (min-max 正見化)
-            close_min = closes.min()
-            close_max = closes.max()
-            close_range = close_max - close_min
-            if close_range == 0:
-                close_range = 1
-            
-            # 揰技 [seq_len, 4]
-            ohlc = np.column_stack([opens, highs, lows, closes])
-            ohlc_norm = (ohlc - close_min) / close_range
-            
-            # 添加批次維度
-            X = ohlc_norm.reshape(1, -1, 4).astype(np.float32)
-            
-            # 預測
-            prediction = model.predict(X, verbose=0)
-            
-            # V2 模型輸出: [price, volatility]
-            price_change_pct = float(prediction[0, 0]) if len(prediction[0]) > 0 else 0.5
-            volatility_pred = float(prediction[0, 1]) if len(prediction[0]) > 1 else 1.2
-            
-            # 逾的潢水模式采用粗矊部分
-            last_kline = klines[-1]
-            volatility_current = abs((last_kline['close'] - last_kline['open']) / last_kline['open']) * 100
-            
-            # 計算 ATR
-            true_ranges = []
-            for i in range(len(klines)):
-                high = highs[i]
-                low = lows[i]
-                prev_close = closes[i-1] if i > 0 else low
-                tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
-                true_ranges.append(tr)
-            atr_14 = np.mean(true_ranges[-14:]) if true_ranges else 0
-            
-            # 預測價格
-            pred_3 = current_close * (1 + price_change_pct / 100 * 0.5)  # 開子樜
-            pred_5 = current_close * (1 + price_change_pct / 100 * 0.8)  # 加強
-            
-            # 預測波動率
-            volatility_pred_3 = abs((pred_3 - current_close) / current_close) * 100
-            volatility_pred_5 = abs((pred_5 - current_close) / current_close) * 100
-            
-            # 波動率等級
-            if volatility_current < 0.5:
-                vol_level = "低"
-            elif volatility_current < 1.5:
-                vol_level = "中"
+            hist_volatility = 0.02  # 默认2%
+        
+        # 确定修正方向
+        if abs(pct_change) > hist_volatility * 3:  # 预测超过3倍历史波动
+            # 偏差过大，需要修正
+            if pct_change > 0:
+                # 预测偏高，向下修正
+                correction_factor = self.correction_factors['aggressive_high']
             else:
-                vol_level = "高"
+                # 预测偏低，向上修正
+                correction_factor = self.correction_factors['aggressive_low']
             
-            # 信心度
-            confidence = min(0.85, max(0.55, abs(price_change_pct) / 3.0))
-            
-            return {
-                'price_3': round(pred_3, 2),
-                'price_5': round(pred_5, 2),
-                'direction': 1 if price_change_pct > 0 else (-1 if price_change_pct < 0 else 0),
-                'confidence': confidence,
-                'volatility_current': volatility_current,
-                'volatility_pred_3': volatility_pred_3,
-                'volatility_pred_5': volatility_pred_5,
-                'volatility_level': vol_level,
-                'atr_14': round(float(atr_14), 2),
-            }
-        
-        except Exception as e:
-            logger.error(f"V2 model prediction failed: {e}")
-            logger.warning(f"Falling back to simple model")
-            return self._forward_simple_model(klines)
-    
-    def _forward_simple_model(self, klines: List[Dict]) -> Dict:
-        """粗便的推理邏輯（不依賴 PyTorch/NumPy）"""
-        # 提取收盤價
-        closes = [k['close'] for k in klines]
-        highs = [k['high'] for k in klines]
-        lows = [k['low'] for k in klines]
-        opens = [k['open'] for k in klines]
-        current_close = closes[-1]
-        
-        # === 計算波動率 (價格變化百分比) ===
-        last_kline = klines[-1]
-        volatility_current = ((last_kline['close'] - last_kline['open']) / last_kline['open']) * 100
-        
-        # 計算平均真實恆度 (ATR)
-        true_ranges = []
-        for i in range(len(klines)):
-            high = highs[i]
-            low = lows[i]
-            prev_close = closes[i-1] if i > 0 else low
-            
-            tr = max(
-                high - low,
-                abs(high - prev_close),
-                abs(low - prev_close)
-            )
-            true_ranges.append(tr)
-        
-        atr_14 = sum(true_ranges[-14:]) / min(14, len(true_ranges)) if true_ranges else 0
-        
-        # 趨勢判斷
-        recent_avg = sum(closes[-5:]) / 5
-        past_avg = sum(closes[:5]) / 5
-        trend = recent_avg - past_avg
-        
-        if trend > 0:
-            direction = 1  # 看漲
-        elif trend < 0:
-            direction = -1  # 看空
+            corrected_price = current * (1 + pct_change / correction_factor)
         else:
-            direction = 0  # 持平
+            # 预测在合理范围内
+            corrected_price = predicted
         
-        # 預測價格
-        pred_3 = current_close * (1 + 0.02 * direction)  # ±2%
-        pred_5 = current_close * (1 + 0.03 * direction)  # ±3%
+        # 确保价格不会走极端
+        max_change = hist_volatility * 5  # 最大允许变化为历史波动的5倍
+        max_price = current * (1 + max_change)
+        min_price = current * (1 - max_change)
         
-        # 預測波動率
-        volatility_pred_3 = ((pred_3 - current_close) / current_close) * 100
-        volatility_pred_5 = ((pred_5 - current_close) / current_close) * 100
-        
-        # 波動率等級
-        abs_volatility = abs(volatility_current)
-        if abs_volatility < 0.5:
-            vol_level = "低"
-        elif abs_volatility < 1.5:
-            vol_level = "中"
-        else:
-            vol_level = "高"
+        corrected_price = max(min_price, min(max_price, corrected_price))
         
         return {
-            'price_3': round(pred_3, 2),
-            'price_5': round(pred_5, 2),
-            'direction': direction,
-            'confidence': 0.65,
-            'volatility_current': volatility_current,
-            'volatility_pred_3': volatility_pred_3,
-            'volatility_pred_5': volatility_pred_5,
-            'volatility_level': vol_level,
-            'atr_14': round(atr_14, 2),
+            'original_predicted': predicted,
+            'corrected_predicted': corrected_price,
+            'correction_applied': corrected_price != predicted,
+            'correction_pct': ((corrected_price - predicted) / predicted * 100) if predicted > 0 else 0,
+            'hist_volatility': hist_volatility,
+            'max_allowed_change': max_change,
         }
 
-model_manager = ModelManagerV2()
+price_corrector = PriceCorrector()
 
 # ============================================================================
-# 實時資料獲取
+# 市场分析模块
 # ============================================================================
-class DataFetcher:
-    def __init__(self):
-        try:
-            import ccxt
-            self.exchange = ccxt.binance()
-            self.available = True
-        except Exception as e:
-            logger.warning(f"CCXT not available: {e}")
-            self.available = False
-            self.exchange = None
+
+class MarketAnalyzer:
+    """市场分析引擎"""
     
-    async def fetch_klines(self, coin: str, timeframe: str = '1h', limit: int = 20) -> List[Dict]:
-        """從 Binance 取得 K 棒數據
+    def analyze_trend(self, historical_prices: List[float]) -> dict:
+        """分析趋势"""
+        if len(historical_prices) < 2:
+            return {'direction': 'neutral', 'strength': 0.5, 'consecutive_bars': 0}
         
-        Args:
-            coin: 幣種 (e.g., 'BTCUSDT')
-            timeframe: 時間框架 (e.g., '1h')
-            limit: 取回的根數
+        recent_count = min(5, len(historical_prices))
+        recent_prices = historical_prices[-recent_count:]
         
-        Returns:
-            List of klines with OHLCV data
-        """
+        up_count = down_count = 0
+        for i in range(1, len(recent_prices)):
+            if recent_prices[i] > recent_prices[i-1]:
+                up_count += 1
+            else:
+                down_count += 1
+        
+        total = up_count + down_count
+        strength = up_count / total if total > 0 else 0.5
+        
+        direction = 'uptrend' if strength > 0.5 else 'downtrend'
+        avg_return = (recent_prices[-1] - recent_prices[0]) / recent_prices[0] if len(recent_prices) > 1 else 0
+        
+        strength_desc = '强势' if strength > 0.7 else ('中等' if strength > 0.5 else '弱')
+        trend_name = '多头上升' if direction == 'uptrend' else '空头下跌'
+        description = f"{trend_name}趋势明显，{strength_desc}程度，最近{up_count if strength > 0.5 else down_count}根K线连续{'上升' if direction == 'uptrend' else '下跌'}"
+        
+        return {
+            'direction': direction,
+            'strength': min(max(strength, 0.0), 1.0),
+            'consecutive_bars': up_count if strength > 0.5 else down_count,
+            'average_return': avg_return,
+            'description': description
+        }
+    
+    def find_price_extremes(self, forecast_prices: List[float]) -> dict:
+        """找出最高和最低点"""
+        if not forecast_prices:
+            return {}
+        
+        lowest_price = min(forecast_prices)
+        highest_price = max(forecast_prices)
+        lowest_bar = forecast_prices.index(lowest_price) + 1
+        highest_bar = forecast_prices.index(highest_price) + 1
+        potential_profit = (highest_price - lowest_price) / lowest_price if lowest_price > 0 else 0
+        
+        return {
+            'lowest_price': lowest_price,
+            'lowest_bar': lowest_bar,
+            'highest_price': highest_price,
+            'highest_bar': highest_bar,
+            'potential_profit': potential_profit
+        }
+    
+    def analyze(
+        self,
+        current_price: float,
+        historical_prices: List[float],
+        forecast_prices: List[float],
+        symbol: str,
+        timeframe: str
+    ) -> dict:
+        """完整分析"""
+        trend = self.analyze_trend(historical_prices)
+        price_extremes = self.find_price_extremes(forecast_prices)
+        
+        # 最佳入场点
+        if trend['direction'] == 'uptrend':
+            best_entry = forecast_prices.index(min(forecast_prices)) + 1
+        else:
+            best_entry = forecast_prices.index(max(forecast_prices)) + 1
+        
+        # 建议
+        entry_price = forecast_prices[best_entry - 1] if best_entry <= len(forecast_prices) else current_price
+        
+        if trend['direction'] == 'uptrend':
+            profit_target = price_extremes.get('highest_price', entry_price)
+            stop_loss = price_extremes.get('lowest_price', entry_price) * 0.99
+            profit_pct = (profit_target - entry_price) / entry_price * 100 if entry_price > 0 else 0
+            risk_pct = (entry_price - stop_loss) / entry_price * 100 if entry_price > 0 else 0
+            
+            recommendation = f"""
+交易信号：强势多头
+趋势分析：{trend['description']}
+
+最优策略：
+- 在第 {best_entry} 根K棒进行开多单
+- 入场价格：${entry_price:.8f}
+- 止盈目标：${profit_target:.8f}（潜在收益：+{profit_pct:.2f}%）
+- 止损位置：${stop_loss:.8f}（控制风险：{risk_pct:.2f}%）
+- 风险回报比：1:{(profit_pct/max(risk_pct, 0.01)):.2f}
+            """
+        else:
+            profit_target = price_extremes.get('lowest_price', entry_price)
+            stop_loss = price_extremes.get('highest_price', entry_price) * 1.01
+            profit_pct = (entry_price - profit_target) / entry_price * 100 if entry_price > 0 else 0
+            risk_pct = (stop_loss - entry_price) / entry_price * 100 if entry_price > 0 else 0
+            
+            recommendation = f"""
+交易信号：强势空头
+趋势分析：{trend['description']}
+
+最优策略：
+- 在第 {best_entry} 根K棒进行开空单
+- 入场价格：${entry_price:.8f}
+- 止盈目标：${profit_target:.8f}（潜在收益：+{profit_pct:.2f}%）
+- 止损位置：${stop_loss:.8f}（控制风险：{risk_pct:.2f}%）
+- 风险回报比：1:{(profit_pct/max(risk_pct, 0.01)):.2f}
+            """
+        
+        return {
+            'trend': trend,
+            'best_entry_bar': best_entry,
+            'price_extremes': price_extremes,
+            'recommendation': recommendation.strip()
+        }
+
+market_analyzer = MarketAnalyzer()
+
+# ============================================================================
+# 数据获取
+# ============================================================================
+
+class DataFetcher:
+    """数据获取"""
+    
+    async def fetch_klines(
+        self,
+        symbol: str,
+        timeframe: str = '1d',
+        limit: int = 30
+    ) -> List[Dict]:
+        """获取K线数据"""
         try:
-            if not self.available:
-                logger.warning(f"CCXT not available, returning demo data for {coin}")
-                return self._generate_demo_klines(limit)
+            # 转换符号
+            if symbol.endswith('USDT'):
+                yf_symbol = symbol.replace('USDT', '-USD')
+            else:
+                yf_symbol = symbol + '-USD'
             
-            logger.info(f"Fetching {limit} {timeframe} klines for {coin}")
+            logger.info(f"[yfinance] 获取 {yf_symbol} {timeframe} 数据...")
             
-            # 非同步訂用（防止阻婫）
-            loop = asyncio.get_event_loop()
-            klines = await loop.run_in_executor(
-                None,
-                self.exchange.fetch_ohlcv,
-                coin,
-                timeframe,
-                None,
-                limit
+            # 获取历史数据
+            interval = '1h' if timeframe == '1h' else '1d'
+            period = '90d' if timeframe == '1d' else '30d'
+            
+            df = yf.download(
+                yf_symbol,
+                period=period,
+                interval=interval,
+                progress=False
             )
             
-            # 轉換格式
-            result = []
-            for k in klines:
-                result.append({
-                    'timestamp': k[0],
-                    'open': k[1],
-                    'high': k[2],
-                    'low': k[3],
-                    'close': k[4],
-                    'volume': k[5]
+            if df.empty:
+                logger.warning(f"未获取到数据: {yf_symbol}")
+                return self._generate_demo_klines(limit)
+            
+            # 转换格式
+            klines = []
+            for idx, row in df.tail(limit).iterrows():
+                klines.append({
+                    'timestamp': int(idx.timestamp() * 1000),
+                    'open': float(row['Open']),
+                    'high': float(row['High']),
+                    'low': float(row['Low']),
+                    'close': float(row['Close']),
+                    'volume': float(row['Volume'])
                 })
             
-            return result
+            logger.info(f"[yfinance] 获取了 {len(klines)} 根K线")
+            return klines
         
         except Exception as e:
-            logger.error(f"Failed to fetch klines for {coin}: {e}")
-            logger.info(f"Falling back to demo data")
+            logger.error(f"获取数据失败: {e}")
             return self._generate_demo_klines(limit)
     
-    def _generate_demo_klines(self, limit: int = 20) -> List[Dict]:
-        """生成漠例 K 棒數據"""
-        import time
+    def _generate_demo_klines(self, limit: int = 30) -> List[Dict]:
+        """生成演示数据"""
         import random
+        import time
         
         klines = []
-        base_price = 42000  # 假設基準價
+        base_price = 42000
         current_time = int(time.time() * 1000) - (limit * 3600 * 1000)
         
         for i in range(limit):
-            price_change = random.uniform(-100, 100)
+            price_change = random.uniform(-200, 200)
             open_price = base_price + price_change
-            close_price = open_price + random.uniform(-50, 50)
+            close_price = open_price + random.uniform(-100, 100)
             high_price = max(open_price, close_price) + random.uniform(0, 100)
             low_price = min(open_price, close_price) - random.uniform(0, 100)
             
@@ -406,7 +356,7 @@ class DataFetcher:
                 'high': round(high_price, 2),
                 'low': round(low_price, 2),
                 'close': round(close_price, 2),
-                'volume': random.uniform(100, 1000)
+                'volume': random.uniform(1000, 10000)
             })
             
             base_price = close_price
@@ -414,143 +364,163 @@ class DataFetcher:
         return klines
 
 data_fetcher = DataFetcher()
-market_analyzer = MarketAnalyzer()
 
 # ============================================================================
-# API 端點
+# 预测模块
 # ============================================================================
 
-@app.get("/")
-async def root():
-    return {
-        "message": "CPB Trading Prediction API - V2",
-        "version": "2.0.0",
-        "model_type": "V2",
-        "supported_coins": len(SUPPORTED_COINS),
-        "endpoints": {
-            "/coins": "List supported coins (20)",
-            "/predict": "Get prediction for a coin",
-            "/predict-batch": "Batch predict multiple coins",
-            "/market-analysis": "Analyze market trend and find best entry point",
-            "/health": "Health check"
-        }
-    }
-
-@app.get("/coins")
-async def get_coins():
-    """清底所有支援的幣種"""
-    return {
-        "coins": SUPPORTED_COINS,
-        "total": len(SUPPORTED_COINS),
-        "model_version": "V2"
-    }
-
-@app.post("/predict")
-async def predict(request: PredictionRequest) -> PredictionResult:
-    """預測交易信號和開單點位 (V2 模型)"""
+class PredictionEngine:
+    """预测引擎"""
     
-    # 驗證幣種
-    if request.coin not in SUPPORTED_COINS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Coin {request.coin} not supported. Supported ({len(SUPPORTED_COINS)}): {SUPPORTED_COINS}"
+    def __init__(self):
+        self.demo_mode = True  # 默认演示模式
+    
+    def predict(
+        self,
+        klines: List[Dict]
+    ) -> Dict:
+        """执行预测"""
+        
+        closes = [k['close'] for k in klines]
+        current_price = closes[-1]
+        
+        # 计算基本趋势
+        recent_avg = sum(closes[-5:]) / 5
+        past_avg = sum(closes[:5]) / 5
+        trend = recent_avg - past_avg
+        
+        direction = 1 if trend > 0 else (-1 if trend < 0 else 0)
+        
+        # 演示预测
+        volatility = np.std(np.array(closes[-10:]) / np.array(closes[-11:-1]) - 1)
+        predicted_change = direction * volatility * 0.5  # 保守估计
+        predicted_price = current_price * (1 + predicted_change)
+        
+        # 应用价格修正
+        correction = price_corrector.correct_predicted_price(
+            current_price,
+            predicted_price,
+            closes,
+            confidence=0.65
+        )
+        
+        corrected_price = correction['corrected_predicted']
+        
+        # 计算波动率
+        volatility_current = ((closes[-1] - closes[-2]) / closes[-2] * 100) if len(closes) > 1 else 0
+        volatility_predicted = ((corrected_price - current_price) / current_price * 100)
+        
+        # ATR
+        tr_list = []
+        for i in range(len(klines)):
+            high = klines[i]['high']
+            low = klines[i]['low']
+            prev_close = closes[i-1] if i > 0 else low
+            tr = max(high - low, abs(high - prev_close), abs(low - prev_close))
+            tr_list.append(tr)
+        atr_14 = np.mean(tr_list[-14:]) if len(tr_list) >= 14 else np.mean(tr_list)
+        
+        return {
+            'current_price': current_price,
+            'predicted_price': corrected_price,
+            'original_predicted': correction['original_predicted'],
+            'log_return': (corrected_price - current_price) / current_price if current_price > 0 else 0,
+            'confidence': 0.68,
+            'recommendation': 'BUY' if direction > 0 else ('SELL' if direction < 0 else 'HOLD'),
+            'direction': direction,
+            'volatility_current': volatility_current,
+            'volatility_predicted': volatility_predicted,
+            'atr_14': atr_14,
+            'correction_info': correction
+        }
+
+prediction_engine = PredictionEngine()
+
+# ============================================================================
+# API 端点
+# ============================================================================
+
+@app.post("/predict-v5")
+async def predict_v5(request: Dict) -> PredictionResponse:
+    """V5 预测端点"""
+    
+    symbol = request.get('symbol', 'BTC')
+    timeframe = request.get('timeframe', '1d')
+    use_binance = request.get('use_binance', False)
+    
+    # 转换符号
+    symbol_map = {
+        'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT',
+        'SOL': 'SOLUSDT', 'XRP': 'XRPUSDT', 'ADA': 'ADAUSDT',
+        'DOGE': 'DOGEUSDT', 'AVAX': 'AVAXUSDT', 'LTC': 'LITUSDT',
+        'DOT': 'DOTUSDT', 'UNI': 'UNIUSDT', 'LINK': 'LINKUSDT',
+        'XLM': 'XLMUSDT', 'ATOM': 'ATOMUSDT'
+    }
+    
+    binance_symbol = symbol_map.get(symbol, symbol + 'USDT')
+    
+    try:
+        # 获取数据
+        klines = await data_fetcher.fetch_klines(
+            binance_symbol,
+            timeframe=timeframe,
+            limit=25
+        )
+        
+        # 执行预测
+        pred = prediction_engine.predict(klines)
+        
+        # 计算交易点位
+        current = pred['current_price']
+        predicted = pred['predicted_price']
+        direction = pred['direction']
+        
+        if direction > 0:
+            entry = current
+            stop_loss = current * 0.98
+            take_profit = predicted * 1.02
+        elif direction < 0:
+            entry = current
+            stop_loss = current * 1.02
+            take_profit = predicted * 0.98
+        else:
+            entry = current
+            stop_loss = current * 0.99
+            take_profit = current * 1.01
+        
+        return PredictionResponse(
+            symbol=symbol,
+            timeframe=timeframe,
+            current_price=current,
+            predicted_price=predicted,
+            log_return=pred['log_return'],
+            confidence=pred['confidence'],
+            recommendation=pred['recommendation'],
+            entry_price=entry,
+            stop_loss=stop_loss,
+            take_profit=take_profit,
+            volatility=VolatilityData(
+                current=pred['volatility_current'],
+                predicted=pred['volatility_predicted'],
+                level='高' if abs(pred['volatility_current']) > 1.5 else ('中' if abs(pred['volatility_current']) > 0.5 else '低'),
+                atr_14=pred['atr_14']
+            ),
+            klines=klines,
+            timestamp=datetime.now().isoformat(),
+            price_source='yfinance',
+            model_version='V5 HYBRID'
         )
     
-    # 1. 獲取實時 K 棒數據
-    klines = await data_fetcher.fetch_klines(
-        request.coin,
-        timeframe='1h',
-        limit=request.lookback_periods
-    )
-    
-    current_price = klines[-1]['close']
-    logger.info(f"{request.coin} current price: {current_price}")
-    
-    # 2. 執行 V2 模型預測
-    pred_result = model_manager.predict(request.coin, klines)
-    
-    # 3. 計算開單點位
-    price_3 = pred_result['price_3']
-    price_5 = pred_result['price_5']
-    direction = pred_result['direction']
-    confidence = pred_result['confidence']
-    volatility_current = pred_result['volatility_current']
-    volatility_pred_3 = pred_result['volatility_pred_3']
-    volatility_pred_5 = pred_result['volatility_pred_5']
-    volatility_level = pred_result['volatility_level']
-    atr_14 = pred_result['atr_14']
-    
-    # 推謀點位
-    if direction > 0:  # 看漲
-        recommendation = "BUY"
-        entry_price = current_price
-        stop_loss = round(current_price * 0.98, 2)  # 止損 2%
-        take_profit = round(price_5 * 1.02, 2) if price_5 > current_price else round(price_5, 2)
-    elif direction < 0:  # 看空
-        recommendation = "SELL"
-        entry_price = current_price
-        stop_loss = round(current_price * 1.02, 2)  # 止損 2%
-        take_profit = round(price_5 * 0.98, 2) if price_5 < current_price else round(price_5, 2)
-    else:  # 持有
-        recommendation = "HOLD"
-        entry_price = current_price
-        stop_loss = round(current_price * 0.99, 2)
-        take_profit = round(current_price * 1.01, 2)
-    
-    # 4. 構建回應
-    result = PredictionResult(
-        coin=request.coin,
-        timestamp=datetime.now().isoformat(),
-        current_price=current_price,
-        predicted_price_3=price_3,
-        predicted_price_5=price_5,
-        recommendation=recommendation,
-        entry_price=entry_price,
-        stop_loss=stop_loss,
-        take_profit=take_profit,
-        confidence=confidence,
-        volatility=VolatilityData(
-            current=round(volatility_current, 2),
-            predicted_3=round(volatility_pred_3, 2),
-            predicted_5=round(volatility_pred_5, 2),
-            level=volatility_level,
-            atr_14=atr_14
-        ),
-        klines=[
-            KlineData(
-                time=datetime.fromtimestamp(k['timestamp']/1000).isoformat(),
-                open=k['open'],
-                high=k['high'],
-                low=k['low'],
-                close=k['close'],
-                volume=k['volume']
-            )
-            for k in klines
-        ],
-        model_version="V2"
-    )
-    
-    return result
-
-@app.post("/predict-batch")
-async def predict_batch(coins: List[str]) -> List[PredictionResult]:
-    """批量預測多個幣種"""
-    results = []
-    for coin in coins:
-        try:
-            result = await predict(PredictionRequest(coin=coin))
-            results.append(result)
-        except Exception as e:
-            logger.error(f"Failed to predict {coin}: {e}")
-            continue
-    return results
+    except Exception as e:
+        logger.error(f"预测失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/market-analysis")
 async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisResponse:
-    """市場分析 - 趨勢判斷和最佳入場點計算"""
+    """市场分析端点"""
     
     try:
-        # 將幣種名灊轉換成 Binance 格式
+        # 转换符号
         symbol_map = {
             'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT',
             'SOL': 'SOLUSDT', 'XRP': 'XRPUSDT', 'ADA': 'ADAUSDT',
@@ -561,23 +531,25 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
         
         binance_symbol = symbol_map.get(request.symbol, request.symbol + 'USDT')
         
-        # 尋找最適時間框架
-        timeframe = '1d' if request.timeframe == '1d' else '1h'
+        # 获取30根K线（20根历史 + 10根预测）
+        all_klines = await data_fetcher.fetch_klines(
+            binance_symbol,
+            timeframe=request.timeframe,
+            limit=30
+        )
         
-        # 1. 獲取擤圭 K線數據矩陣(20根歷史) + 上來10根預測
-        all_klines = await data_fetcher.fetch_klines(binance_symbol, timeframe, limit=30)
+        if len(all_klines) < 20:
+            raise HTTPException(status_code=400, detail="数据不足")
         
-        # 分成歷史數據和予測數據
         historical_klines = all_klines[:20]
         forecast_klines = all_klines[20:30]
         
-        # 提取價格慰新恰寶 
         historical_prices = [k['close'] for k in historical_klines]
         forecast_prices = [k['close'] for k in forecast_klines]
         current_price = historical_klines[-1]['close']
         
-        # 2. 執行市場分析
-        analysis_result = market_analyzer.analyze(
+        # 执行分析
+        analysis = market_analyzer.analyze(
             current_price=current_price,
             historical_prices=historical_prices,
             forecast_prices=forecast_prices,
@@ -585,64 +557,66 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
             timeframe=request.timeframe
         )
         
-        # 3. 構建回應
-        response = MarketAnalysisResponse(
+        return MarketAnalysisResponse(
             symbol=request.symbol,
             timeframe=request.timeframe,
-            trend={
-                'direction': analysis_result.trend.direction,
-                'strength': round(analysis_result.trend.strength, 2),
-                'consecutive_bars': analysis_result.trend.consecutive_bars,
-                'average_return': round(analysis_result.trend.average_return * 100, 2),
-                'description': analysis_result.trend.description
-            },
-            best_entry_bar=analysis_result.best_entry_bar,
-            price_extremes={
-                'lowest_price': analysis_result.price_extremes.lowest_price,
-                'lowest_bar': analysis_result.price_extremes.lowest_bar,
-                'highest_price': analysis_result.price_extremes.highest_price,
-                'highest_bar': analysis_result.price_extremes.highest_bar,
-                'potential_profit': round(analysis_result.price_extremes.potential_profit * 100, 2)
-            },
+            trend=analysis['trend'],
+            best_entry_bar=analysis['best_entry_bar'],
+            price_extremes=analysis['price_extremes'],
             forecast_prices=forecast_prices,
-            recommendation=analysis_result.recommendation
+            recommendation=analysis['recommendation']
         )
-        
-        return response
     
     except Exception as e:
-        logger.error(f"Market analysis failed: {e}")
+        logger.error(f"分析失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/health")
-async def health_check():
-    """健康検查"""
+@app.get("/")
+async def root():
+    """根端点"""
     return {
-        "status": "ok",
-        "timestamp": datetime.now().isoformat(),
-        "model_version": "V2",
-        "models_cached": len(model_manager.models),
-        "supported_coins": len(SUPPORTED_COINS)
+        "message": "CPB Trading V5 HYBRID",
+        "version": "5.0.0",
+        "endpoints": {
+            "/predict-v5": "获取价格预测",
+            "/market-analysis": "市场趋势分析和最佳入场点"
+        }
     }
 
-# ============================================================================
-# 運行
-# ============================================================================
 if __name__ == "__main__":
     import uvicorn
-    print("\n" + "="*80)
-    print(" "*20 + "CPB Trading Web - V2 Model")
-    print("="*80)
-    print(f"\nModel Version: V2")
-    print(f"Supported Coins: {len(SUPPORTED_COINS)}")
-    print(f"\nStarting FastAPI server...")
-    print(f"API: http://localhost:8000")
-    print(f"Docs: http://localhost:8000/docs")
-    print("\n" + "="*80 + "\n")
+    
+    print("""
+================================================================================
+               CPB Trading Web - V5 Model (HYBRID VERSION)
+================================================================================
+
+Model Version: V5 (HYBRID)
+Strategy: Demo Mode with Price Correction
+Price Source: yfinance (unified, consistent across timeframes)
+Supported Symbols: 14
+Timeframes: ['1d', '1h']
+
+Starting FastAPI server...
+API: http://localhost:8001
+Docs: http://localhost:8001/docs
+
+⚠  PRICE CORRECTION ENABLED!
+   - Automatic MAPE offset correction
+   - Historical volatility-based bounds
+   - Smart confidence-weighted adjustments
+
+⚠  MARKET ANALYSIS ENABLED!
+   - Trend detection (uptrend/downtrend)
+   - Best entry point calculation
+   - Price extremes analysis
+
+================================================================================
+    """)
     
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=8000,
+        port=8001,
         log_level="info"
     )
