@@ -7,13 +7,21 @@ Uploads entire models_v6 folder in ONE operation
 Simple and efficient - no file-by-file uploads
 
 Usage:
-  pip install huggingface_hub --upgrade
-  export HF_TOKEN='your_hf_write_token'
-  python upload_models_v6_folder.py
+  Method 1: Environment Variable
+    export HF_TOKEN='your_hf_write_token'
+    python upload_models_v6_folder.py
+  
+  Method 2: Command Line Argument
+    python upload_models_v6_folder.py your_hf_write_token
+  
+  Method 3: Interactive Input
+    python upload_models_v6_folder.py
+    (will prompt for token)
 """
 
 import os
 import sys
+import getpass
 from pathlib import Path
 from datetime import datetime
 
@@ -46,6 +54,56 @@ def print_header():
 def print_section(title):
     print(f"\n[{title}]")
     print("-" * 80)
+
+def get_hf_token():
+    """
+    Try to get HF token from multiple sources:
+    1. Command line argument
+    2. Environment variable HF_TOKEN
+    3. Environment variable HUGGINGFACE_TOKEN
+    4. Local file ~/.huggingface/token
+    5. Interactive input
+    """
+    
+    # Source 1: Command line argument
+    if len(sys.argv) > 1:
+        token = sys.argv[1].strip()
+        if token and not token.startswith('-'):
+            return token, "command line argument"
+    
+    # Source 2: Environment variable HF_TOKEN
+    token = os.getenv('HF_TOKEN')
+    if token:
+        return token, "environment variable (HF_TOKEN)"
+    
+    # Source 3: Environment variable HUGGINGFACE_TOKEN
+    token = os.getenv('HUGGINGFACE_TOKEN')
+    if token:
+        return token, "environment variable (HUGGINGFACE_TOKEN)"
+    
+    # Source 4: Local file
+    hf_token_file = Path.home() / '.huggingface' / 'token'
+    if hf_token_file.exists():
+        try:
+            with open(hf_token_file, 'r') as f:
+                token = f.read().strip()
+            if token:
+                return token, "local file (~/.huggingface/token)"
+        except:
+            pass
+    
+    # Source 5: Interactive input
+    print("\nNo HF_TOKEN found. Please enter your HuggingFace Write Token:")
+    print("(You can get it from https://huggingface.co/settings/tokens)")
+    print()
+    try:
+        token = getpass.getpass("HF Token > ").strip()
+        if token:
+            return token, "interactive input"
+    except:
+        pass
+    
+    return None, None
 
 def main():
     print_header()
@@ -82,14 +140,17 @@ def main():
     
     # Check HF Token
     print(f"\nHuggingFace Token")
-    token = os.getenv('HF_TOKEN')
+    token, source = get_hf_token()
     
     if not token:
         print(f"  ✗ HF_TOKEN not found!")
-        print(f"\n  Set token with: export HF_TOKEN='your_token'")
+        print(f"\n  Set token with one of:")
+        print(f"    export HF_TOKEN='your_token'")
+        print(f"    python upload_models_v6_folder.py 'your_token'")
+        print(f"    Or save to ~/.huggingface/token")
         sys.exit(1)
     
-    print(f"  ✓ Token found")
+    print(f"  ✓ Token found (source: {source})")
     
     # Check repository access
     print(f"\nRepository Access: {HF_REPO_ID}")
@@ -104,6 +165,10 @@ def main():
         print(f"  ✓ Repository accessible")
     except Exception as e:
         print(f"  ✗ Cannot access repository: {e}")
+        print(f"\n  Troubleshooting:")
+        print(f"    1. Verify token is correct")
+        print(f"    2. Check token has write permissions")
+        print(f"    3. Verify repository exists and is accessible")
         sys.exit(1)
     
     # ========================================================================
@@ -140,10 +205,9 @@ def main():
         print(f"\n✗ Upload failed!")
         print(f"Error: {e}")
         print(f"\nTroubleshooting:")
-        print(f"  1. Verify HF_TOKEN is correct")
-        print(f"  2. Check repository write permissions")
-        print(f"  3. Verify network connection")
-        print(f"  4. Update huggingface_hub: pip install --upgrade huggingface_hub")
+        print(f"  1. Verify HF_TOKEN is correct and has write permissions")
+        print(f"  2. Check network connection")
+        print(f"  3. Try again: python upload_models_v6_folder.py")
         sys.exit(1)
     
     # ========================================================================
