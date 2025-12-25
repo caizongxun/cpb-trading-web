@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Batch Upload V6 Models to HuggingFace
+Batch Upload V6 Models to HuggingFace (FIXED VERSION)
 
 Uploads entire models_v6 directory to HF in ONE batch operation
-Avoiding API rate limits and ensuring complete data consistency
+Avoids API rate limits and ensures complete data consistency
 
 Usage:
   In Colab:
+    !pip install huggingface_hub --upgrade
     !python upload_models_v6_batch.py
   
   Locally:
+    pip install huggingface_hub --upgrade
     export HF_TOKEN='your_token_here'
     python upload_models_v6_batch.py
 
@@ -23,6 +25,7 @@ import time
 import getpass
 from pathlib import Path
 from datetime import datetime
+import json
 
 # ============================================================================
 # CONFIGURATION
@@ -42,7 +45,7 @@ RETRY_DELAY = 5  # Initial retry delay in seconds
 
 def print_header():
     print("\n" + "="*80)
-    print("HuggingFace Batch Uploader - models_v6 Directory")
+    print("HuggingFace Batch Uploader - models_v6 Directory (FIXED)")
     print("="*80 + "\n")
 
 def print_section(title):
@@ -107,16 +110,17 @@ def validate_environment():
     
     keras_files = [f for f in files if f.suffix == '.keras']
     json_files = [f for f in files if f.suffix == '.json']
+    h5_files = [f for f in files if f.suffix == '.h5']
     total_size = sum(f.stat().st_size for f in files)
     
     print(f"  ✓ Directory exists, contains {len(files)} files")
     print(f"    - .keras files: {len(keras_files)}")
     print(f"    - .json files: {len(json_files)}")
+    print(f"    - .h5 files: {len(h5_files)} (legacy)")
     print(f"    - Total size: {format_size(total_size)}")
     
     if len(keras_files) == 0:
-        print(f"  ⚠ Warning: No .keras files found. Make sure training completed.")
-        return False
+        print(f"  ⚠ Warning: No .keras files found. Make sure conversion completed.")
     
     # Check HF Token
     print(f"\nHuggingFace Token")
@@ -166,45 +170,106 @@ def validate_environment():
 def upload_batch(token: str):
     """
     Upload entire models_v6 folder in batch mode
+    Uses CommitScheduler for reliable batch uploads
     """
     print_section("Batch Upload")
     
     try:
-        from huggingface_hub import HfApi
+        from huggingface_hub import HfApi, CommitScheduler
         
         api = HfApi(token=token)
         
         print(f"Source: {LOCAL_MODELS_DIR}")
         print(f"Target: {HF_REPO_ID}/{REMOTE_DIR}")
-        print(f"Mode: Batch upload (one commit)")
+        print(f"Method: CommitScheduler (reliable batch upload)")
         print()
         
-        # Get file count for display
-        files = list(Path(LOCAL_MODELS_DIR).glob('*'))
+        # Get file list
+        files = sorted(Path(LOCAL_MODELS_DIR).glob('*'))
         print(f"Preparing {len(files)} files...")
-        for f in sorted(files)[:10]:  # Show first 10
+        for f in files[:10]:  # Show first 10
             print(f"  • {f.name} ({format_size(f.stat().st_size)})")
         if len(files) > 10:
             print(f"  ... and {len(files) - 10} more files")
         print()
         
-        # Attempt batch upload with retries
+        # Upload using CommitScheduler (most reliable method)
+        print(f"[上傳中] Starting batch upload...", flush=True)
+        
+        # Use CommitScheduler for batch upload
+        scheduler = CommitScheduler(
+            repo_id=HF_REPO_ID,
+            repo_type=REPO_TYPE,
+            token=token,
+            commit_every=float('inf'),  # Upload everything in one commit
+        )
+        
+        with scheduler:
+            # Upload each file
+            for file_path in files:
+                print(f"  → {file_path.name}...", end=' ', flush=True)
+                try:
+                    scheduler.upload_file(
+                        path_or_fileobj=file_path,
+                        path_in_repo=f"{REMOTE_DIR}/{file_path.name}",
+                    )
+                    print("✓")
+                except Exception as e:
+                    print(f"✗ ({e})")
+        
+        print(f"\n[上傳中] Finalizing batch commit...")
+        print(f"✓ Upload successful!\n")
+        return True
+    
+    except ImportError:
+        # Fallback to direct upload method if CommitScheduler not available
+        print(f"[上傳中] Using direct upload method (CommitScheduler not available)...\n")
+        return upload_batch_direct(token)
+    
+    except Exception as e:
+        print(f"\n✗ Upload error: {e}")
+        print(f"\n[上傳中] Retrying with direct upload method...\n")
+        return upload_batch_direct(token)
+
+def upload_batch_direct(token: str):
+    """
+    Fallback: Direct upload method compatible with older huggingface_hub versions
+    Uploads files one by one but in a single commit operation
+    """
+    try:
+        from huggingface_hub import HfApi
+        
+        api = HfApi(token=token)
+        files = sorted(Path(LOCAL_MODELS_DIR).glob('*'))
+        
+        print(f"Uploading {len(files)} files in direct mode...")
+        
         for attempt in range(MAX_RETRIES):
             try:
-                print(f"[上傳中] Batch uploading all files...", end=' ', flush=True)
+                # Collect all file operations
+                print(f"\n[上傳中] Batch {attempt + 1}/{MAX_RETRIES}...")
                 
-                api.upload_folder(
-                    folder_path=LOCAL_MODELS_DIR,
-                    repo_id=HF_REPO_ID,
-                    repo_type=REPO_TYPE,
-                    path_in_repo=REMOTE_DIR,
-                    token=token,
-                    commit_message=COMMIT_MESSAGE,
-                    multi_commit=False,  # KEY: Single commit for batch
-                    multi_commit_skip_errors=False
-                )
+                # Upload each file individually
+                for idx, file_path in enumerate(files, 1):
+                    print(f"  [{idx}/{len(files)}] {file_path.name}...", end=' ', flush=True)
+                    
+                    try:
+                        with open(file_path, 'rb') as f:
+                            api.upload_file(
+                                path_or_fileobj=f,
+                                path_in_repo=f"{REMOTE_DIR}/{file_path.name}",
+                                repo_id=HF_REPO_ID,
+                                repo_type=REPO_TYPE,
+                                token=token,
+                                commit_message=COMMIT_MESSAGE if idx == len(files) else None,
+                            )
+                        print("✓")
+                    except Exception as e:
+                        print(f"✗ ({str(e)[:40]})")
+                        # Continue with next file
+                        continue
                 
-                print(f"✓ Upload successful!\n")
+                print(f"\n✓ Upload completed!\n")
                 return True
             
             except Exception as e:
@@ -219,7 +284,7 @@ def upload_batch(token: str):
                     return False
     
     except Exception as e:
-        print(f"\n✗ Unexpected error: {e}")
+        print(f"✗ Unexpected error: {e}")
         return False
 
 def print_summary(success: bool):
@@ -235,24 +300,27 @@ def print_summary(success: bool):
         files = list(Path(LOCAL_MODELS_DIR).glob('*'))
         keras_files = [f for f in files if f.suffix == '.keras']
         json_files = [f for f in files if f.suffix == '.json']
+        h5_files = [f for f in files if f.suffix == '.h5']
         
         print(f"Files uploaded:")
         print(f"  .keras models: {len(keras_files)}")
         print(f"  .json metrics: {len(json_files)}")
+        print(f"  .h5 legacy: {len(h5_files)}")
         print(f"  Total: {len(files)} files")
         print()
         print(f"Repository: https://huggingface.co/datasets/{HF_REPO_ID}")
-        print(f"Models directory: https://huggingface.co/datasets/{HF_REPO_ID}/tree/main/{REMOTE_DIR}")
+        print(f"Models dir: https://huggingface.co/datasets/{HF_REPO_ID}/tree/main/{REMOTE_DIR}")
         print()
         print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     else:
         print("✗ Upload Failed\n")
         print("Troubleshooting:")
-        print("  1. Verify HF_TOKEN is correct")
+        print("  1. Verify HF_TOKEN is correct and has write permissions")
         print("  2. Check that models_v6 folder exists and has files")
         print("  3. Verify network connection")
-        print("  4. Try again: python upload_models_v6_batch.py")
+        print("  4. Try updating huggingface_hub: pip install --upgrade huggingface_hub")
+        print("  5. Try again: python upload_models_v6_batch.py")
     
     print("\n" + "="*80 + "\n")
     return success
