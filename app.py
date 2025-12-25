@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-CPB Trading Web - V5 Model (HYBRID VERSION)
-包含市场分析端点和价格偏移修正
+CPB Trading Web - V5 Model (HYBRID VERSION) - DEBUG VERSION
+带详细调试日志
 """
 
 import asyncio
@@ -15,11 +15,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 import logging
+import json
 
-logging.basicConfig(level=logging.INFO)
+# 详细的日志配置
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='[%(asctime)s] %(levelname)s - %(name)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="CPB Trading V5 HYBRID", version="5.0.0")
+app = FastAPI(title="CPB Trading V5 HYBRID DEBUG", version="5.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +33,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+logger.info("="*80)
+logger.info("FastAPI 应用启动")
+logger.info("="*80)
 
 # ============================================================================
 # 数据模型
@@ -70,6 +79,8 @@ class MarketAnalysisResponse(BaseModel):
     forecast_prices: List[float]
     recommendation: str
 
+logger.debug("数据模型已定义")
+
 # ============================================================================
 # 价格修正模块 - 处理 MAPE 偏移
 # ============================================================================
@@ -77,19 +88,15 @@ class MarketAnalysisResponse(BaseModel):
 class PriceCorrector:
     """
     处理模型预测的价格偏移
-    MAPE 偏差通常来自于:
-    1. 价格正常化和反正常化的累积误差
-    2. 极端价格点的过度或不足预测
-    3. 市场波动的非线性特征
     """
     
     def __init__(self):
-        # 基于经验的偏移修正因子
         self.correction_factors = {
-            'aggressive_high': 1.15,  # 预测偏高时
-            'aggressive_low': 0.85,   # 预测偏低时
-            'moderate': 1.00,          # 适度预测
+            'aggressive_high': 1.15,
+            'aggressive_low': 0.85,
+            'moderate': 1.00,
         }
+        logger.info("价格修正器已初始化")
     
     def correct_predicted_price(
         self,
@@ -98,49 +105,43 @@ class PriceCorrector:
         historical_prices: List[float],
         confidence: float = 0.65
     ) -> Dict:
-        """
-        修正预测价格，考虑:
-        - 历史波动率
-        - 预测信心度
-        - 价格偏差方向
-        """
+        logger.debug(f"伊始价格修正: current={current_price}, predicted={predicted_price}")
         
-        # 计算历史价格统计
         price_array = np.array(historical_prices)
         current = float(current_price)
         predicted = float(predicted_price)
         
-        # 计算基本变化百分比
         pct_change = (predicted - current) / current if current > 0 else 0
+        logger.debug(f"价格变化百分比: {pct_change*100:.4f}%")
         
-        # 计算历史波动率 (过去20根K线的标准差)
         if len(price_array) > 1:
             hist_returns = np.diff(price_array) / price_array[:-1]
             hist_volatility = np.std(hist_returns)
         else:
-            hist_volatility = 0.02  # 默认2%
+            hist_volatility = 0.02
         
-        # 确定修正方向
-        if abs(pct_change) > hist_volatility * 3:  # 预测超过3倍历史波动
-            # 偏差过大，需要修正
+        logger.debug(f"歴史波动: {hist_volatility*100:.4f}%")
+        
+        if abs(pct_change) > hist_volatility * 3:
+            logger.warning("预测超过3倍歴史波动，需要修正!")
             if pct_change > 0:
-                # 预测偏高，向下修正
                 correction_factor = self.correction_factors['aggressive_high']
+                logger.debug(f"预测偏高, 改正因子: {correction_factor}")
             else:
-                # 预测偏低，向上修正
                 correction_factor = self.correction_factors['aggressive_low']
+                logger.debug(f"预测偏低, 改正因子: {correction_factor}")
             
             corrected_price = current * (1 + pct_change / correction_factor)
         else:
-            # 预测在合理范围内
+            logger.debug("预测在合理范围内, 不稱修正")
             corrected_price = predicted
         
-        # 确保价格不会走极端
-        max_change = hist_volatility * 5  # 最大允许变化为历史波动的5倍
+        max_change = hist_volatility * 5
         max_price = current * (1 + max_change)
         min_price = current * (1 - max_change)
         
         corrected_price = max(min_price, min(max_price, corrected_price))
+        logger.debug(f"修正後: {corrected_price}")
         
         return {
             'original_predicted': predicted,
@@ -161,7 +162,7 @@ class MarketAnalyzer:
     """市场分析引擎"""
     
     def analyze_trend(self, historical_prices: List[float]) -> dict:
-        """分析趋势"""
+        logger.debug("分析趋势...")
         if len(historical_prices) < 2:
             return {'direction': 'neutral', 'strength': 0.5, 'consecutive_bars': 0}
         
@@ -183,7 +184,9 @@ class MarketAnalyzer:
         
         strength_desc = '强势' if strength > 0.7 else ('中等' if strength > 0.5 else '弱')
         trend_name = '多头上升' if direction == 'uptrend' else '空头下跌'
-        description = f"{trend_name}趋势明显，{strength_desc}程度，最近{up_count if strength > 0.5 else down_count}根K线连续{'上升' if direction == 'uptrend' else '下跌'}"
+        description = f"{trend_name}趋势明显，{strength_desc}程度"
+        
+        logger.debug(f"趨势结果: {direction}, 強度: {strength*100:.1f}%")
         
         return {
             'direction': direction,
@@ -194,7 +197,7 @@ class MarketAnalyzer:
         }
     
     def find_price_extremes(self, forecast_prices: List[float]) -> dict:
-        """找出最高和最低点"""
+        logger.debug("嫶找价格极值...")
         if not forecast_prices:
             return {}
         
@@ -203,6 +206,8 @@ class MarketAnalyzer:
         lowest_bar = forecast_prices.index(lowest_price) + 1
         highest_bar = forecast_prices.index(highest_price) + 1
         potential_profit = (highest_price - lowest_price) / lowest_price if lowest_price > 0 else 0
+        
+        logger.debug(f"最低: ${lowest_price:.2f} (第{lowest_bar}根), 最高: ${highest_price:.2f} (第{highest_bar}根)")
         
         return {
             'lowest_price': lowest_price,
@@ -220,62 +225,41 @@ class MarketAnalyzer:
         symbol: str,
         timeframe: str
     ) -> dict:
-        """完整分析"""
+        logger.info(f"\n=== 市场分析 ===")
+        logger.info(f"符号: {symbol}, 時間框: {timeframe}")
+        logger.info(f"當前價: ${current_price:.2f}")
+        logger.info(f"旧歴史数据: {len(historical_prices)} 根")
+        logger.info(f"预測数据: {len(forecast_prices)} 根")
+        
         trend = self.analyze_trend(historical_prices)
         price_extremes = self.find_price_extremes(forecast_prices)
         
-        # 最佳入场点
         if trend['direction'] == 'uptrend':
             best_entry = forecast_prices.index(min(forecast_prices)) + 1
         else:
             best_entry = forecast_prices.index(max(forecast_prices)) + 1
         
-        # 建议
+        logger.info(f"最佳入场点: 第 {best_entry} 根K棒")
+        
         entry_price = forecast_prices[best_entry - 1] if best_entry <= len(forecast_prices) else current_price
         
         if trend['direction'] == 'uptrend':
-            profit_target = price_extremes.get('highest_price', entry_price)
-            stop_loss = price_extremes.get('lowest_price', entry_price) * 0.99
-            profit_pct = (profit_target - entry_price) / entry_price * 100 if entry_price > 0 else 0
-            risk_pct = (entry_price - stop_loss) / entry_price * 100 if entry_price > 0 else 0
-            
-            recommendation = f"""
-交易信号：强势多头
-趋势分析：{trend['description']}
-
-最优策略：
-- 在第 {best_entry} 根K棒进行开多单
-- 入场价格：${entry_price:.8f}
-- 止盈目标：${profit_target:.8f}（潜在收益：+{profit_pct:.2f}%）
-- 止损位置：${stop_loss:.8f}（控制风险：{risk_pct:.2f}%）
-- 风险回报比：1:{(profit_pct/max(risk_pct, 0.01)):.2f}
-            """
+            recommendation = f"多头信號 (第{best_entry}根)"
         else:
-            profit_target = price_extremes.get('lowest_price', entry_price)
-            stop_loss = price_extremes.get('highest_price', entry_price) * 1.01
-            profit_pct = (entry_price - profit_target) / entry_price * 100 if entry_price > 0 else 0
-            risk_pct = (stop_loss - entry_price) / entry_price * 100 if entry_price > 0 else 0
-            
-            recommendation = f"""
-交易信号：强势空头
-趋势分析：{trend['description']}
-
-最优策略：
-- 在第 {best_entry} 根K棒进行开空单
-- 入场价格：${entry_price:.8f}
-- 止盈目标：${profit_target:.8f}（潜在收益：+{profit_pct:.2f}%）
-- 止损位置：${stop_loss:.8f}（控制风险：{risk_pct:.2f}%）
-- 风险回报比：1:{(profit_pct/max(risk_pct, 0.01)):.2f}
-            """
+            recommendation = f"空头信號 (第{best_entry}根)"
+        
+        logger.info(f"建議: {recommendation}")
+        logger.info("=" * 50)
         
         return {
             'trend': trend,
             'best_entry_bar': best_entry,
             'price_extremes': price_extremes,
-            'recommendation': recommendation.strip()
+            'recommendation': recommendation
         }
 
 market_analyzer = MarketAnalyzer()
+logger.info("市场分析器已初始化")
 
 # ============================================================================
 # 数据获取
@@ -290,19 +274,19 @@ class DataFetcher:
         timeframe: str = '1d',
         limit: int = 30
     ) -> List[Dict]:
-        """获取K线数据"""
+        logger.debug(f"\n[获取K线] {symbol} {timeframe} {limit}根")
         try:
-            # 转换符号
             if symbol.endswith('USDT'):
                 yf_symbol = symbol.replace('USDT', '-USD')
             else:
                 yf_symbol = symbol + '-USD'
             
-            logger.info(f"[yfinance] 获取 {yf_symbol} {timeframe} 数据...")
+            logger.debug(f"yfinance 符号: {yf_symbol}")
             
-            # 获取历史数据
             interval = '1h' if timeframe == '1h' else '1d'
             period = '90d' if timeframe == '1d' else '30d'
+            
+            logger.debug(f"xua转下辜: {period}, 間隕: {interval}")
             
             df = yf.download(
                 yf_symbol,
@@ -315,7 +299,6 @@ class DataFetcher:
                 logger.warning(f"未获取到数据: {yf_symbol}")
                 return self._generate_demo_klines(limit)
             
-            # 转换格式
             klines = []
             for idx, row in df.tail(limit).iterrows():
                 klines.append({
@@ -327,7 +310,7 @@ class DataFetcher:
                     'volume': float(row['Volume'])
                 })
             
-            logger.info(f"[yfinance] 获取了 {len(klines)} 根K线")
+            logger.debug(f"获取了 {len(klines)} 根K线")
             return klines
         
         except Exception as e:
@@ -335,7 +318,7 @@ class DataFetcher:
             return self._generate_demo_klines(limit)
     
     def _generate_demo_klines(self, limit: int = 30) -> List[Dict]:
-        """生成演示数据"""
+        logger.debug("生成演示数据")
         import random
         import time
         
@@ -364,6 +347,7 @@ class DataFetcher:
         return klines
 
 data_fetcher = DataFetcher()
+logger.info("数据获取器已初始化")
 
 # ============================================================================
 # 预测模块
@@ -373,30 +357,27 @@ class PredictionEngine:
     """预测引擎"""
     
     def __init__(self):
-        self.demo_mode = True  # 默认演示模式
+        self.demo_mode = True
+        logger.info("预测引擎已初始化 (演示模式)")
     
-    def predict(
-        self,
-        klines: List[Dict]
-    ) -> Dict:
-        """执行预测"""
+    def predict(self, klines: List[Dict]) -> Dict:
+        logger.debug(f"\n[预测] 处理 {len(klines)} 根K线")
         
         closes = [k['close'] for k in klines]
         current_price = closes[-1]
         
-        # 计算基本趋势
         recent_avg = sum(closes[-5:]) / 5
         past_avg = sum(closes[:5]) / 5
         trend = recent_avg - past_avg
         
         direction = 1 if trend > 0 else (-1 if trend < 0 else 0)
+        logger.debug(f"趨势方向: {direction}")
         
-        # 演示预测
         volatility = np.std(np.array(closes[-10:]) / np.array(closes[-11:-1]) - 1)
-        predicted_change = direction * volatility * 0.5  # 保守估计
+        predicted_change = direction * volatility * 0.5
         predicted_price = current_price * (1 + predicted_change)
+        logger.debug(f"不修正预測: {predicted_price:.2f}")
         
-        # 应用价格修正
         correction = price_corrector.correct_predicted_price(
             current_price,
             predicted_price,
@@ -406,11 +387,9 @@ class PredictionEngine:
         
         corrected_price = correction['corrected_predicted']
         
-        # 计算波动率
         volatility_current = ((closes[-1] - closes[-2]) / closes[-2] * 100) if len(closes) > 1 else 0
         volatility_predicted = ((corrected_price - current_price) / current_price * 100)
         
-        # ATR
         tr_list = []
         for i in range(len(klines)):
             high = klines[i]['high']
@@ -440,15 +419,17 @@ prediction_engine = PredictionEngine()
 # API 端点
 # ============================================================================
 
+logger.info("\n=" * 40 + "\n正在注册 API 端点\n" + "=" * 40)
+
 @app.post("/predict-v5")
 async def predict_v5(request: Dict) -> PredictionResponse:
     """V5 预测端点"""
+    logger.info(f"\n[预测] 請求: {request}")
     
     symbol = request.get('symbol', 'BTC')
     timeframe = request.get('timeframe', '1d')
     use_binance = request.get('use_binance', False)
     
-    # 转换符号
     symbol_map = {
         'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT',
         'SOL': 'SOLUSDT', 'XRP': 'XRPUSDT', 'ADA': 'ADAUSDT',
@@ -458,19 +439,17 @@ async def predict_v5(request: Dict) -> PredictionResponse:
     }
     
     binance_symbol = symbol_map.get(symbol, symbol + 'USDT')
+    logger.debug(f"Binance 符号: {binance_symbol}")
     
     try:
-        # 获取数据
         klines = await data_fetcher.fetch_klines(
             binance_symbol,
             timeframe=timeframe,
             limit=25
         )
         
-        # 执行预测
         pred = prediction_engine.predict(klines)
         
-        # 计算交易点位
         current = pred['current_price']
         predicted = pred['predicted_price']
         direction = pred['direction']
@@ -487,6 +466,8 @@ async def predict_v5(request: Dict) -> PredictionResponse:
             entry = current
             stop_loss = current * 0.99
             take_profit = current * 1.01
+        
+        logger.info(f"[预测] 成功: {symbol} {pred['recommendation']}")
         
         return PredictionResponse(
             symbol=symbol,
@@ -512,15 +493,20 @@ async def predict_v5(request: Dict) -> PredictionResponse:
         )
     
     except Exception as e:
-        logger.error(f"预测失败: {e}")
+        logger.error(f"[预测] 失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/market-analysis")
 async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisResponse:
     """市场分析端点"""
     
+    logger.info(f"\n[MARKET_ANALYSIS_START]")
+    logger.info(f"請求体: {request}")
+    logger.info(f不符: {request.symbol}")
+    logger.info(f"時間框架: {request.timeframe}")
+    logger.info(f"Binance: {request.use_binance}")
+    
     try:
-        # 转换符号
         symbol_map = {
             'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT',
             'SOL': 'SOLUSDT', 'XRP': 'XRPUSDT', 'ADA': 'ADAUSDT',
@@ -530,15 +516,18 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
         }
         
         binance_symbol = symbol_map.get(request.symbol, request.symbol + 'USDT')
+        logger.debug(f"Binance 符号: {binance_symbol}")
         
-        # 获取30根K线（20根历史 + 10根预测）
+        logger.debug("获取 K线数据...")
         all_klines = await data_fetcher.fetch_klines(
             binance_symbol,
             timeframe=request.timeframe,
             limit=30
         )
+        logger.info(f"获取了 {len(all_klines)} 根K线")
         
         if len(all_klines) < 20:
+            logger.error("数据不足 (< 20)")
             raise HTTPException(status_code=400, detail="数据不足")
         
         historical_klines = all_klines[:20]
@@ -548,7 +537,9 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
         forecast_prices = [k['close'] for k in forecast_klines]
         current_price = historical_klines[-1]['close']
         
-        # 执行分析
+        logger.debug(f"歴史价: {len(historical_prices)}, 预測价: {len(forecast_prices)}, 當前: ${current_price:.2f}")
+        
+        logger.debug("執行市场分析...")
         analysis = market_analyzer.analyze(
             current_price=current_price,
             historical_prices=historical_prices,
@@ -556,8 +547,9 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
             symbol=request.symbol,
             timeframe=request.timeframe
         )
+        logger.info(f"[市场分析] 成功")
         
-        return MarketAnalysisResponse(
+        response = MarketAnalysisResponse(
             symbol=request.symbol,
             timeframe=request.timeframe,
             trend=analysis['trend'],
@@ -566,16 +558,20 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
             forecast_prices=forecast_prices,
             recommendation=analysis['recommendation']
         )
+        
+        logger.info(f"[MARKET_ANALYSIS_END] 成功")
+        return response
     
     except Exception as e:
-        logger.error(f"分析失败: {e}")
+        logger.error(f"[市场分析] 失败: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/")
 async def root():
     """根端点"""
+    logger.debug("根端点請求")
     return {
-        "message": "CPB Trading V5 HYBRID",
+        "message": "CPB Trading V5 HYBRID DEBUG",
         "version": "5.0.0",
         "endpoints": {
             "/predict-v5": "获取价格预测",
@@ -588,7 +584,7 @@ if __name__ == "__main__":
     
     print("""
 ================================================================================
-               CPB Trading Web - V5 Model (HYBRID VERSION)
+               CPB Trading Web - V5 Model (HYBRID VERSION) - DEBUG
 ================================================================================
 
 Model Version: V5 (HYBRID)
@@ -611,12 +607,19 @@ Docs: http://localhost:8001/docs
    - Best entry point calculation
    - Price extremes analysis
 
+⚠  DEBUG MODE ENABLED!
+   - Detailed logging for troubleshooting
+
 ================================================================================
     """)
+    
+    logger.info("\n" + "="*80)
+    logger.info("启动 FastAPI 服务器")
+    logger.info("="*80)
     
     uvicorn.run(
         app,
         host="0.0.0.0",
         port=8001,
-        log_level="info"
+        log_level="debug"
     )
