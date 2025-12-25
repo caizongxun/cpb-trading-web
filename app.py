@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 CPB Trading Web - V5 Model (HYBRID VERSION) - DEBUG VERSION
-包含市场分析端点和价格校正 + 残差补偿
+包含市场分析端点、价格校正 + 残差补偿
 """
 
 import asyncio
@@ -12,10 +12,13 @@ import tensorflow as tf
 from datetime import datetime, timedelta
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 import logging
 import json
+import os
 
 # 详细的日志配置
 logging.basicConfig(
@@ -460,9 +463,22 @@ prediction_engine = PredictionEngine()
 
 logger.info("\n" + "="*40 + "\n正在注册 API 端点\n" + "="*40)
 
+@app.get("/kline-dashboard", response_class=HTMLResponse)
+async def kline_dashboard():
+    """提供K線图表仪表板"""
+    try:
+        with open('kline_dashboard.html', 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        logger.error("找K線图表HTML文件失败")
+        return HTMLResponse(
+            content="<h1>文件未找到</h1><p>请确保 kline_dashboard.html 存在于查询目录。</p>",
+            status_code=404
+        )
+
 @app.post("/predict-v5")
 async def predict_v5(request: Dict) -> PredictionResponse:
-    """V5 预测端点"""
+    """В5 预测端点"""
     logger.info(f"\n[预测] 请求: {request}")
     
     symbol = request.get('symbol', 'BTC')
@@ -619,9 +635,12 @@ async def root():
             "Price prediction with dynamic volatility correction",
             "Residual bias compensation (7 major coins)",
             "Market trend analysis",
-            "Automatic entry/exit points"
+            "Automatic entry/exit points",
+            "Interactive K-line chart dashboard"
         ],
         "endpoints": {
+            "/": "根端点",
+            "/kline-dashboard": "互动式K線官方板",
             "/predict-v5": "获取价格预测 (含残差补偿)",
             "/market-analysis": "市场趋势分析和最佳入场点"
         }
@@ -637,7 +656,7 @@ if __name__ == "__main__":
                CPB Trading Web - V5 Model (HYBRID VERSION) - DEBUG
 ================================================================================
 
-Model Version: V5 (HYBRID) + Residual Bias Compensation
+Model Version: V5 (HYBRID) + Residual Bias Compensation + K-Line Dashboard
 Strategy: Informed by 2025-12-25 high-precision residual analysis (7 decimal places)
 Price Source: yfinance (unified, consistent across timeframes)
 Supported Symbols: 14
@@ -646,13 +665,14 @@ Timeframes: ['1d', '1h']
 Starting FastAPI server...
 API: http://localhost:8001
 Docs: http://localhost:8001/docs
+K-Line Dashboard: http://localhost:8001/kline-dashboard
 
 ⚠  PRICE CORRECTION ENABLED!
    - Automatic MAPE offset correction
    - Historical volatility-based bounds
    - Smart confidence-weighted adjustments
 
-⚠  RESIDUAL BIAS COMPENSATION ENABLED! (NEW)
+⚠  RESIDUAL BIAS COMPENSATION ENABLED!
    - BTC-USD: +500.00
    - ETH-USD: +21.50
    - BNB-USD: +5.00
@@ -660,6 +680,12 @@ Docs: http://localhost:8001/docs
    - LTC-USD: +0.40
    - AVAX-USD: +0.20
    - LINK-USD: +0.13
+
+⚠  K-LINE DASHBOARD ENABLED!
+   - Interactive candlestick chart
+   - Multi-coin selector
+   - 30 historical bars + 10 forecast bars
+   - Real-time ATR-based range prediction
 
 ⚠  MARKET ANALYSIS ENABLED!
    - Trend detection (uptrend/downtrend)
