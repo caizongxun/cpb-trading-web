@@ -18,6 +18,11 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import yfinance as yf
+import warnings
+
+# 抑制 TensorFlow 警告
+warnings.filterwarnings('ignore')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,7 +66,8 @@ print(f"\n[✓] 模型版本: V5 (HYBRID)")
 print(f"[✓] 支援幣種: {len(SUPPORTED_CRYPTOS_V5)}")
 print(f"[✓] 時間框架: {SUPPORTED_TIMEFRAMES}")
 print(f"[✓] 價格源: yfinance (統一當前價格)")
-print(f"[✓] Binance 支援: 已內置 (可選使用)\n")
+print(f"[✓] Binance 支援: 已內置 (可選使用)")
+print(f"[✓] TensorFlow 已配置\n")
 
 class PredictionRequestV5(BaseModel):
     symbol: str
@@ -173,8 +179,17 @@ class ModelManagerV5:
             shutil.copy(scalers_path, local_scalers_path)
             
             logger.info(f"[REAL] Loading TensorFlow model...")
-            tf.keras.backend.set_learning_phase(0)
-            model = tf.keras.models.load_model(str(local_model_path))
+            
+            # 修復: 移除已棄用的 set_learning_phase API
+            try:
+                model = tf.keras.models.load_model(
+                    str(local_model_path),
+                    compile=False  # 不編譯以避免相容性問題
+                )
+                model.compile(optimizer='adam', loss='mse')
+            except Exception as e:
+                logger.warning(f"[REAL] Model compile error, trying alternative load: {str(e)[:80]}")
+                model = tf.keras.models.load_model(str(local_model_path))
             
             with open(local_scalers_path, 'rb') as f:
                 scalers = pickle.load(f)
@@ -208,7 +223,9 @@ class ModelManagerV5:
             scaler_X = model_info['scalers']['X']
             X_norm = scaler_X.transform(X_recent)
             X_input = X_norm.reshape(1, 60, -1).astype(np.float32)
-            y_pred_norm = model_info['model'].predict([X_input, X_input], verbose=0).flatten()
+            
+            # 使用 predict 時不需要特殊的 training 參數
+            y_pred_norm = model_info['model'].predict(X_input, verbose=0).flatten()
             
             scaler_y = model_info['scalers']['y']
             y_pred = scaler_y.inverse_transform(y_pred_norm.reshape(-1, 1)).flatten()
@@ -571,12 +588,15 @@ if __name__ == "__main__":
     print(f"\nStarting FastAPI server...")
     print(f"API: http://localhost:8001")
     print(f"Docs: http://localhost:8001/docs")
-    print("\n⚠  HYBRID MODE: Always provides predictions!")
-    print("   - If real model loads: Uses trained model")
-    print("   - If real model fails: Falls back to intelligent demo predictions")
-    print("\n⚠  PRICE CONSISTENCY:")
-    print("   - 1D and 1H use SAME current price (from yfinance)")
-    print("   - Binance optional (use_binance=true parameter)")
-    print("\n" + "="*80 + "\n")
+    print(f"\n⚠  HYBRID MODE: Always provides predictions!")
+    print(f"   - If real model loads: Uses trained model")
+    print(f"   - If real model fails: Falls back to intelligent demo predictions")
+    print(f"\n⚠  PRICE CONSISTENCY:")
+    print(f"   - 1D and 1H use SAME current price (from yfinance)")
+    print(f"   - Binance optional (use_binance=true parameter)")
+    print(f"\n⚠  TENSORFLOW FIX:")
+    print(f"   - Removed deprecated set_learning_phase API")
+    print(f"   - Using compile=False for model loading")
+    print(f"\n" + "="*80 + "\n")
     
     uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")
