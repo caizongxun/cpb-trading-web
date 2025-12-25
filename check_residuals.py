@@ -27,18 +27,30 @@ SYMBOLS = [
 
 def v5_logic_predict(window_closes):
     """模拟 V5 模型的预测逻辑"""
-    current_price = window_closes[-1]
-    recent_avg = np.mean(window_closes[-5:])
-    past_avg = np.mean(window_closes[:5])
-    
-    direction = 1 if recent_avg > past_avg else -1
-    
-    returns = np.diff(window_closes[-10:]) / window_closes[-11:-1]
-    volatility = np.std(returns) if len(returns) > 0 else 0.02
-    
-    pred_change = direction * volatility * 0.5
-    predicted_price = current_price * (1 + pred_change)
-    return predicted_price
+    try:
+        window = np.array(window_closes, dtype=float)
+        current_price = float(window[-1])
+        recent_avg = float(np.mean(window[-5:]))
+        past_avg = float(np.mean(window[:5]))
+        
+        direction = 1.0 if recent_avg > past_avg else -1.0
+        
+        # 计算波动率
+        if len(window) >= 11:
+            recent_window = window[-10:]
+            prev_prices = window[-11:-1]
+            returns = (recent_window - prev_prices) / prev_prices
+            volatility = float(np.std(returns))
+        else:
+            volatility = 0.02
+        
+        volatility = max(volatility, 0.001)  # 防止波动率为 0
+        pred_change = direction * volatility * 0.5
+        predicted_price = current_price * (1.0 + pred_change)
+        
+        return float(predicted_price)
+    except Exception as e:
+        return None
 
 def calculate_residuals(symbol, days=90):
     """
@@ -60,18 +72,22 @@ def calculate_residuals(symbol, days=90):
         actuals = []
         preds = []
         
-        # 滚动回测
-        data = df['Close'].values.flatten()
+        # 提取收盘价
+        close_prices = df['Close'].values
         timestamps = df.index
         
-        for i in range(25, len(data)-1):
-            window = data[i-25:i+1]
+        # 滚动回测
+        for i in range(25, len(close_prices)-1):
+            window = close_prices[i-25:i+1]
             
             # V5 预测
             pred_price = v5_logic_predict(window)
             
+            if pred_price is None:
+                continue
+            
             # 实际的明天价格
-            actual_next_day = data[i+1]
+            actual_next_day = float(close_prices[i+1])
             
             # 计算残差
             residual = actual_next_day - pred_price
@@ -81,18 +97,20 @@ def calculate_residuals(symbol, days=90):
             preds.append(pred_price)
             dates.append(timestamps[i+1])
         
-        residuals = np.array(residuals)
+        if len(residuals) == 0:
+            print(" [没有有效数据]")
+            return None
+        
+        residuals = np.array(residuals, dtype=float)
         
         # 计算统计指标
-        mean_residual = np.mean(residuals)
-        std_residual = np.std(residuals)
-        min_residual = np.min(residuals)
-        max_residual = np.max(residuals)
-        median_residual = np.median(residuals)
+        mean_residual = float(np.mean(residuals))
+        std_residual = float(np.std(residuals))
+        min_residual = float(np.min(residuals))
+        max_residual = float(np.max(residuals))
+        median_residual = float(np.median(residuals))
         
-        # 系统偏差不平衡度 (是否一致残差)
-        # 如果 std 很小，说明残差很稳定、粗整（便于校正）
-        # 如果 std 很大，说明残差不稳定、随机（需要改进模型）
+        # 系统偏差不平衡度
         bias_stability = "稳定" if std_residual < abs(mean_residual) else "不稳定"
         
         print(" [完成]")
@@ -113,30 +131,32 @@ def calculate_residuals(symbol, days=90):
         }
     
     except Exception as e:
-        print(f" [错误: {str(e)[:30]}]")
+        print(f" [错误: {str(e)[:40]}]")
         return None
 
 def interpret_residual(mean_residual, std_residual):
     """
     解读残差的含义
     """
-    if abs(mean_residual) < 100:  # 低于 100 USD
+    abs_mean = abs(mean_residual)
+    
+    if abs_mean < 100:
         interpretation = "模型不需调整，非常准"
-    elif abs(mean_residual) < 500:
+    elif abs_mean < 500:
         interpretation = "小幅偏差，低估/高估很齐"
-    elif abs(mean_residual) < 1000:
+    elif abs_mean < 1000:
         interpretation = "中等偏差，建议校正"
     else:
-        interpretation = "大的系统性偏差，需要校正"
+        interpretation = "大系统性偏差，需要校正"
     
-    bias_quality = "稳定偏差（容易修复）" if std_residual < abs(mean_residual) else "不稳定偏差（难改善）"
+    bias_quality = "稳定偏差（容易修复）" if std_residual < abs_mean else "不稳定偏差（难改善）"
     
     return f"{interpretation} | {bias_quality}"
 
 # === 主程序 ===
-print("\n" + "="*120)
+print("\n" + "="*130)
 print("残差 (Residual) 分析 - 计算每个币种的系统性偏差")
-print("="*120)
+print("="*130)
 print(f"执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"每个币种会回测最近 90 天的数据，正常一次配置需要 5-15 分钟\n")
 
@@ -150,7 +170,7 @@ for sym in SYMBOLS:
     else:
         errors.append(sym)
 
-print("\n" + "="*120)
+print("\n" + "="*130)
 
 # 打印表头
 header_symbol = "币种"
@@ -160,25 +180,23 @@ header_median = "中位数"
 header_range = "最小~最大"
 header_interp = "为什么"
 
-print(f"{header_symbol:<10} | {header_mean:<15} | {header_std:<15} | {header_median:<15} | {header_range:<30} | {header_interp:<40}")
-print("="*120)
+print(f"{header_symbol:<10} | {header_mean:<16} | {header_std:<16} | {header_median:<16} | {header_range:<28} | {header_interp:<45}")
+print("="*130)
 
-for res in sorted(results, key=lambda x: abs(x['mean_residual'])):
-    symbol_name = res['symbol'].replace('-USD', '')
-    mean_res = res['mean_residual']
-    std_res = res['std_residual']
-    median_res = res['median_residual']
-    min_res = res['min_residual']
-    max_res = res['max_residual']
-    interpretation = interpret_residual(mean_res, std_res)
-    
-    # 增加符号表示低估/高估
-    sign = "↓" if mean_res > 0 else "↑"
-    
-    range_str = f"{min_res:.0f}~{max_res:.0f}$"
-    print(f"{symbol_name:<10} | {mean_res:>14.2f}$ | {std_res:>14.2f}$ | {median_res:>14.2f}$ | {range_str:<30} | {interpretation:<40}")
+if results:
+    for res in sorted(results, key=lambda x: abs(x['mean_residual'])):
+        symbol_name = res['symbol'].replace('-USD', '')
+        mean_res = res['mean_residual']
+        std_res = res['std_residual']
+        median_res = res['median_residual']
+        min_res = res['min_residual']
+        max_res = res['max_residual']
+        interpretation = interpret_residual(mean_res, std_res)
+        
+        range_str = f"{min_res:.0f}~{max_res:.0f}$"
+        print(f"{symbol_name:<10} | {mean_res:>15.2f}$ | {std_res:>15.2f}$ | {median_res:>15.2f}$ | {range_str:<28} | {interpretation:<45}")
 
-print("="*120)
+print("="*130)
 
 # 统计汇总
 print(f"\n统计汇总:")
@@ -192,18 +210,18 @@ if results:
     print(f"  总体标准差: {avg_std:.2f}$")
     
     if avg_mean > 0:
-        print(f"  推估模型: 整体低估 (↓ 所有币种平均偏低 {avg_mean:.2f}$)")
+        print(f"  \u63a8估模型: 整体低估 (↓ 所有币种平均偏低 {avg_mean:.2f}$)")
     elif avg_mean < 0:
-        print(f"  推估模型: 整体高估 (↑ 所有币种平均偏高 {abs(avg_mean):.2f}$)")
+        print(f"  \u63a8估模型: 整体高估 (↑ 所有币种平均偏高 {abs(avg_mean):.2f}$)")
     else:
-        print(f"  推估模型: 完全无偏差")
+        print(f"  \u63a8估模型: 完全无偏差")
     
     print(f"  成功评估: {len(results)}/{len(SYMBOLS)} 个币种")
 
 if errors:
     print(f"  失败: {len(errors)} 个币种")
 
-print("\n" + "="*120)
+print("\n" + "="*130)
 print("\n残差解读指南:")
 print("""
   残差 = 实际价 - 预测价
@@ -213,12 +231,12 @@ print("""
   残差 ~ 0:           模型无偏差，异常准确
   
   标准差 (残差的波动范围):  
-    - 低 (低于平均值):   残差很稳定 -> 容易校正 (上限 + 残差值)
+    - 低 (低于平均值):   残差很稳定 -> 容易校正 (正值总是低估，加上正数)
     - 高 (高于平均值):   残差非常不稳定 -> 想要校正效果草
   
-  关键信号: 残差趋势图
-    - 如果残差关于 0 查看 足是 正值或负值，
-    - 总一个方向摇摇欲坠 -> 可以稳定校正
+  校正策略: 残差趋势图
+    - 正值残差 -> 模型低估 -> 正值修正
+    - 負值残差 -> 模型高估 -> 負值修正
 """.strip())
 
-print("\n" + "="*120 + "\n")
+print("\n" + "="*130 + "\n")
