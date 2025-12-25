@@ -321,15 +321,15 @@
     <div class="container">
         <div class="header">
             <h1>CPB Prediction Dashboard</h1>
-            <p>選擇版本 (V5/V6) • 加密貨幣 • 未来 10 根預測</p>
+            <p>選擇版本 (V5/V6) • 加密貨幣 • 未來 10 根預測</p>
         </div>
         
         <div class="controls">
             <div class="control-group">
-                <label>模弋版本</label>
+                <label>模型版本</label>
                 <select id="version">
-                    <option value="V6">🌟 V6 (上新，推荑)</option>
-                    <option value="V5">🌙 V5 (稳定版本)</option>
+                    <option value="V6">V6 (最新，推薦)</option>
+                    <option value="V5">V5 (穩定版本)</option>
                 </select>
             </div>
             
@@ -343,26 +343,26 @@
             <div class="control-group">
                 <label>時間核</label>
                 <select id="timeframe">
-                    <option value="1h">∱ 1 小時</option>
-                    <option value="1d">📅 1 天</option>
+                    <option value="1h">1 小時</option>
+                    <option value="1d">1 天</option>
                 </select>
             </div>
             
             <div class="control-group">
-                <label>筒旧根數 (CSV)</label>
-                <input type="text" id="historicalPrices" placeholder="e.g., 40000, 40100, 40200">
+                <label>歷史價格 (CSV)</label>
+                <input type="text" id="historicalPrices" placeholder="例如: 40000, 40100, 40200">
             </div>
             
             <div class="button-group">
-                <button class="btn btn-predict" onclick="predictForecast()">&#128520; 預測上次 10 根</button>
-                <button class="btn btn-reset" onclick="resetForm()">↺ 重置</button>
+                <button class="btn btn-predict" onclick="predictForecast()">預測未來 10 根</button>
+                <button class="btn btn-reset" onclick="resetForm()">重置</button>
             </div>
         </div>
         
         <div id="result" style="display:none;">
             <div class="dashboard">
                 <div class="card">
-                    <h2>📊 預測結果</h2>
+                    <h2>預測結果</h2>
                     
                     <div class="price-info">
                         <span class="price-label">當前價格</span>
@@ -370,7 +370,7 @@
                     </div>
                     
                     <div class="price-info">
-                        <span class="price-label">称値 (10 根後)</span>
+                        <span class="price-label">平均值 (10 根後)</span>
                         <span class="price-value" id="avgForecastPrice">-</span>
                     </div>
                     
@@ -384,11 +384,11 @@
                             <div class="stat-value" id="minPrice">-</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-label">伊信度</div>
+                            <div class="stat-label">信心度</div>
                             <div class="stat-value" id="confidence">-</div>
                         </div>
                         <div class="stat-item">
-                            <div class="stat-label">模弋狀態</div>
+                            <div class="stat-label">模型狀態</div>
                             <div class="stat-value" id="modelStatus">-</div>
                         </div>
                     </div>
@@ -399,13 +399,13 @@
                 </div>
                 
                 <div class="card">
-                    <h2>📄 預測詳詳</h2>
+                    <h2>預測詳細</h2>
                     <table class="forecast-table">
                         <thead>
                             <tr>
                                 <th>K 棒</th>
                                 <th>預測價</th>
-                                <th>伊信度</th>
+                                <th>信心度</th>
                             </tr>
                         </thead>
                         <tbody id="forecastTable">
@@ -413,9 +413,9 @@
                     </table>
                     
                     <div class="info-box">
-                        <strong>📚 版本資訊:</strong><br>
+                        <strong>版本資訊:</strong><br>
                         <span id="versionInfo">-</span><br><br>
-                        <strong>📅 時間:</strong><br>
+                        <strong>時間:</strong><br>
                         <span id="timestamp">-</span>
                     </div>
                 </div>
@@ -434,7 +434,7 @@
     
     <script>
         let chart = null;
-        const API_URL = window.location.origin; // 会自動是目前筑埡
+        const API_URL = window.location.origin;
         
         // 按版本更新幣種
         document.getElementById('version').addEventListener('change', async (e) => {
@@ -446,16 +446,16 @@
                 const data = await response.json();
                 const coins = data[version] || [];
                 
-                symbolSelect.innerHTML = coins.map(coin => 
-                    `<option value="${coin}">${coin}</option>`
-                ).join('');
-                
-                if (coins.length === 0) {
+                if (coins.length > 0) {
+                    symbolSelect.innerHTML = coins.map(coin => 
+                        `<option value="${coin}">${coin}</option>`
+                    ).join('');
+                } else {
                     symbolSelect.innerHTML = '<option>-- 沒有可用的幣種 --</option>';
                 }
             } catch (error) {
-                console.error('加載幣種失敗:', error);
-                symbolSelect.innerHTML = '<option>-- 加載失敗 --</option>';
+                console.error('載入幣種失敗:', error);
+                symbolSelect.innerHTML = '<option>-- 載入失敗 --</option>';
             }
         });
         
@@ -477,7 +477,7 @@
                     historicalPrices = pricesInput.split(',').map(p => parseFloat(p.trim()));
                     if (historicalPrices.some(isNaN)) throw new Error();
                 } catch {
-                    alert('價格格式錙誤');
+                    alert('價格格式錯誤');
                     return;
                 }
             }
@@ -532,9 +532,9 @@
             document.getElementById('maxPrice').textContent = `$${maxPrice.toFixed(2)}`;
             document.getElementById('minPrice').textContent = `$${minPrice.toFixed(2)}`;
             document.getElementById('confidence').textContent = `${(forecasts[0].confidence * 100).toFixed(0)}%`;
-            document.getElementById('modelStatus').textContent = result.model_status === 'loaded' ? '📐 真實' : '📄 綜合';
+            document.getElementById('modelStatus').textContent = result.model_status === 'loaded' ? '真實' : '綜合';
             
-            // 須表
+            // 表格
             const tableHtml = forecasts.map((f, i) => {
                 const confidenceClass = f.confidence > 0.7 ? 'confidence-high' : 
                                        f.confidence > 0.5 ? 'confidence-medium' : 'confidence-low';
@@ -548,11 +548,11 @@
             }).join('');
             document.getElementById('forecastTable').innerHTML = tableHtml;
             
-            // 版本詳
+            // 版本資訊
             document.getElementById('versionInfo').textContent = `${result.version} | ${result.symbol}`;
             document.getElementById('timestamp').textContent = new Date(result.timestamp).toLocaleString('zh-TW');
             
-            // 財表圖
+            // 繪製圖表
             drawChart(lastCloses, prices, currentPrice);
             
             document.getElementById('result').style.display = 'block';
@@ -563,7 +563,7 @@
             
             if (chart) chart.destroy();
             
-            // 準備數據鱼
+            // 準備數據點
             const labels = [];
             // 歷史 (H-10 ~ H)
             for (let i = -historical.length; i <= 0; i++) {
@@ -575,7 +575,7 @@
                 labels.push(`F+${i}`);
             }
             
-            // 整合價格敲料
+            // 整合價格數據
             const allPrices = [...historical, ...forecast];
             
             chart = new Chart(ctx, {
