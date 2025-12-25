@@ -7,7 +7,7 @@ Residual (残差) 计算脚本
 残差 = 实际价 - 预测价
 - 残差 > 0: 模型整体低估
 - 残差 < 0: 模型整体高估
-- 残差 ∼ 0: 模型无偏差
+- 残差 ~ 0: 模型无偏差
 """
 
 import yfinance as yf
@@ -45,7 +45,7 @@ def calculate_residuals(symbol, days=90):
     计算一个币种的残差序列
     残差 = 实际价 - 预测价
     """
-    print(f"\u6b63在计算 {symbol}...", end="", flush=True)
+    print(f"正在计算 {symbol}...", end="", flush=True)
     
     try:
         # 下载数据
@@ -83,7 +83,7 @@ def calculate_residuals(symbol, days=90):
         
         residuals = np.array(residuals)
         
-        # 计算筱计指标
+        # 计算统计指标
         mean_residual = np.mean(residuals)
         std_residual = np.std(residuals)
         min_residual = np.min(residuals)
@@ -92,8 +92,8 @@ def calculate_residuals(symbol, days=90):
         
         # 系统偏差不平衡度 (是否一致残差)
         # 如果 std 很小，说明残差很稳定、粗整（便于校正）
-        # 如果 std 很大，说明残差不稳定、随机（需要改进模形）
-        bias_stability = "\u7a33\u5b9a" if std_residual < abs(mean_residual) else "\u4e0d\u7a33\u5b9a"
+        # 如果 std 很大，说明残差不稳定、随机（需要改进模型）
+        bias_stability = "稳定" if std_residual < abs(mean_residual) else "不稳定"
         
         print(" [完成]")
         
@@ -121,24 +121,24 @@ def interpret_residual(mean_residual, std_residual):
     解读残差的含义
     """
     if abs(mean_residual) < 100:  # 低于 100 USD
-        interpretation = "模形不需调整，非常沺"
+        interpretation = "模型不需调整，非常准"
     elif abs(mean_residual) < 500:
-        interpretation = "小幅偏差，低估/高估很轳"
+        interpretation = "小幅偏差，低估/高估很齐"
     elif abs(mean_residual) < 1000:
         interpretation = "中等偏差，建议校正"
     else:
         interpretation = "大的系统性偏差，需要校正"
     
-    bias_quality = "稳\u5b9a\u504f\u5dee\uff08\u5bb9\u6613\u4fee\u590d\uff09" if std_residual < abs(mean_residual) else "不\u7a33\u5b9a\u504f\u5dee\uff08\u96be\u6539\善\uff09"
+    bias_quality = "稳定偏差（容易修复）" if std_residual < abs(mean_residual) else "不稳定偏差（难改善）"
     
     return f"{interpretation} | {bias_quality}"
 
 # === 主程序 ===
-print("\n" + "="*100)
-print("\u6b8b差 (Residual) 分析 - 计算每个币种的系统性偏差")
-print("="*100)
-print(f"\u6267行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-print(f"\u6bcf个币种会回测最近 90 \u5929\u7684数\u636e\uff0c正\u5e38\u4e00\u6b21\u914d\u7f6e\u9700\u8981 5-15 \u5206\u949f\n\n")
+print("\n" + "="*120)
+print("残差 (Residual) 分析 - 计算每个币种的系统性偏差")
+print("="*120)
+print(f"执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"每个币种会回测最近 90 天的数据，正常一次配置需要 5-15 分钟\n")
 
 results = []
 errors = []
@@ -150,9 +150,18 @@ for sym in SYMBOLS:
     else:
         errors.append(sym)
 
-print("\n" + "="*100)
-print(f"{'\u5e01\u79cd':<10} | {'\u5e73\u5747\u6b8b\u5dee':<15} | {'\u6807\u51c6\u5dee':<15} | {'\u4e2d\u4f4d\u6570':<15} | {'\u6700\u5c0f~\u6700\u5927':<30} | {'\u70ba\u59426':<30}")
-print("="*100)
+print("\n" + "="*120)
+
+# 打印表头
+header_symbol = "币种"
+header_mean = "平均残差"
+header_std = "标准差"
+header_median = "中位数"
+header_range = "最小~最大"
+header_interp = "为什么"
+
+print(f"{header_symbol:<10} | {header_mean:<15} | {header_std:<15} | {header_median:<15} | {header_range:<30} | {header_interp:<40}")
+print("="*120)
 
 for res in sorted(results, key=lambda x: abs(x['mean_residual'])):
     symbol_name = res['symbol'].replace('-USD', '')
@@ -164,37 +173,52 @@ for res in sorted(results, key=lambda x: abs(x['mean_residual'])):
     interpretation = interpret_residual(mean_res, std_res)
     
     # 增加符号表示低估/高估
-    sign = "" if mean_res > 0 else ""
+    sign = "↓" if mean_res > 0 else "↑"
     
-    print(f"{symbol_name:<10} | {mean_res:>14.2f}$ | {std_res:>14.2f}$ | {median_res:>14.2f}$ | {min_res:>10.2f}~{max_res:<10.2f}$ | {interpretation:<30}")
+    range_str = f"{min_res:.0f}~{max_res:.0f}$"
+    print(f"{symbol_name:<10} | {mean_res:>14.2f}$ | {std_res:>14.2f}$ | {median_res:>14.2f}$ | {range_str:<30} | {interpretation:<40}")
 
-print("="*100)
+print("="*120)
 
 # 统计汇总
-(print(f"\n\u7edf\u8ba1汇\u603b:")
+print(f"\n统计汇总:")
 if results:
-    print(f"  总体\u5e73\u5747\u6b8b\u5dee: {np.mean([r['mean_residual'] for r in results]):.2f}$")
-    print(f"  总\u4f53\u4e2d\u4f4d\u6570: {np.median([r['median_residual'] for r in results]):.2f}$")
-    print(f"  \u603b\u4f53\u6807\u51c6\u5dee: {np.mean([r['std_residual'] for r in results]):.2f}$")
-    print(f"  \u63a8\u4f30\u6a21\u578b: {'\u6574\u4f53\u6574\u4f53\u4f4e\u4f30' if np.mean([r['mean_residual'] for r in results]) > 0 else '\u6574\u4f53\u6574\u4f53\u9ad8\u4f30'}")
+    avg_mean = np.mean([r['mean_residual'] for r in results])
+    avg_median = np.median([r['median_residual'] for r in results])
+    avg_std = np.mean([r['std_residual'] for r in results])
+    
+    print(f"  总体平均残差: {avg_mean:.2f}$")
+    print(f"  总体中位数: {avg_median:.2f}$")
+    print(f"  总体标准差: {avg_std:.2f}$")
+    
+    if avg_mean > 0:
+        print(f"  推估模型: 整体低估 (↓ 所有币种平均偏低 {avg_mean:.2f}$)")
+    elif avg_mean < 0:
+        print(f"  推估模型: 整体高估 (↑ 所有币种平均偏高 {abs(avg_mean):.2f}$)")
+    else:
+        print(f"  推估模型: 完全无偏差")
+    
+    print(f"  成功评估: {len(results)}/{len(SYMBOLS)} 个币种")
 
 if errors:
-    print(f"  \u5e73\u5931\u8d25: {len(errors)} \u4e2a\u5e01\u79cd")
+    print(f"  失败: {len(errors)} 个币种")
 
-print("\n" + "="*100)
-print("\n\u6b8b\u5dee\u89e3\u8bfb\u6307\u5357:")
+print("\n" + "="*120)
+print("\n残差解读指南:")
 print("""
-  残\u5dee = \u5b9e\u9645\u4ef7 - \u9884\u6d4b\u4ef7
+  残差 = 实际价 - 预测价
   
-  \u6b8b\u5dee > 0 (\u6b63\u503c):    模\u5f62\u6574\u4f53\u4f4e\u4f30\u4e86\n  \u6b8b\u5dee < 0 (\u8ca0\u503c):    模\u5f62\u6574\u4f53\u9ad8\u4f30\u4e86
-  残\u5dee \u223c 0:           \u6a21\u5f62\u65e0\u504f\u5dee\uff0c\u5f02\u5e38\u51c6\u786e
+  残差 > 0 (正值):    模型整体低估了
+  残差 < 0 (负值):    模型整体高估了
+  残差 ~ 0:           模型无偏差，异常准确
   
-  \u6807\u51c6\u5dee (\u6b8b\u5dee\u7684\u6ce2\u52a8\u8303\u56f4):  
-    - \u4f4e (\u4f4e\u4e8e\u5e73\u5747\u503c):   \u6b8b\u5dee\u5f88\u7a33\u5b9a -> \u5bb9\u6613\u6821\u6b63 (\u4e0a\u9694 + 1000)
-    - \u9ad8 (\u9ad8\u4e8e\u5e73\u5747\u503c):   \u6b8b\u5dee\u975e\u5e38\u4e0d\u7a33\u5b9a -> \u60f3\u8981\u6821\u6b63\u6548\u679c\u8349\n  
-  \u5173\u952e\u4fe1\u53f7: \u6b8b\u5dee \u8d8b\u52bf\u56fe
-    - \u5982\u679c\u6b8b\u5dee\u5173\u4e8e \u67e5\u770b \u8db3\u662f \u6b63\u503c\u6216\u8ca0\u503c\uff0c
-    - \u603b\u4e00\u4e2a\u65b9\u5411\u504a\u504a\u7eef -> \u53ef\u4ee5\u7a33\u5b9a\u6821\u6b63
+  标准差 (残差的波动范围):  
+    - 低 (低于平均值):   残差很稳定 -> 容易校正 (上限 + 残差值)
+    - 高 (高于平均值):   残差非常不稳定 -> 想要校正效果草
+  
+  关键信号: 残差趋势图
+    - 如果残差关于 0 查看 足是 正值或负值，
+    - 总一个方向摇摇欲坠 -> 可以稳定校正
 """.strip())
 
-print("\n" + "="*100 + "\n")
+print("\n" + "="*120 + "\n")
