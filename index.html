@@ -7,6 +7,7 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>CPB Trading - V5 預測系統</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         * {
             margin: 0;
@@ -558,6 +559,49 @@
             color: var(--text-secondary);
             margin-top: 0.5rem;
         }
+
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-bottom: 2rem;
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .dashboard-card {
+            background-color: var(--bg-primary);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .dashboard-card h3 {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .dashboard-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--accent-color);
+        }
+
+        .dashboard-value.positive {
+            color: var(--success-color);
+        }
+
+        .dashboard-value.negative {
+            color: var(--error-color);
+        }
     </style>
 </head>
 <body>
@@ -576,7 +620,8 @@
 
     <div class="sidebar" id="sidebar">
         <div class="sidebar-item active" onclick="switchPage('prediction')">📊 預測</div>
-        <div class="sidebar-item" onclick="switchPage('analysis')">📈 市場分析</div>
+        <div class="sidebar-item" onclick="switchPage('dashboard')">📈 儀表板</div>
+        <div class="sidebar-item" onclick="switchPage('analysis')">📊 市場分析</div>
         <div class="sidebar-item" onclick="switchPage('settings')">⚙️ 設定</div>
     </div>
 
@@ -755,6 +800,85 @@
             </div>
         </div>
 
+        <div id="dashboard" class="page">
+            <div class="card">
+                <div class="card-title">預測儀表板 - 多幣種對比</div>
+
+                <div class="refresh-control">
+                    <label for="auto-refresh-interval-dashboard">自動更新間隔:</label>
+                    <select id="auto-refresh-interval-dashboard" onchange="updateAutoRefreshIntervalDashboard()">
+                        <option value="">❌ 不自動更新</option>
+                        <option value="30">⏱️ 每30秒</option>
+                        <option value="60" selected>⏱️ 每1分鐘</option>
+                        <option value="120">⏱️ 每2分鐘</option>
+                        <option value="300">⏱️ 每5分鐘</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="testAutoRefreshDashboard()" style="margin-left: auto;">🧪 測試自動更新</button>
+                </div>
+                <div class="last-update-time" id="last-update-time-dashboard"></div>
+
+                <div class="form-group">
+                    <div class="form-label">選擇幣種</div>
+                    <div class="tag-group" id="coin-selector">
+                        <div class="tag active" data-symbol="BTC" onclick="toggleCoin(this)">BTC</div>
+                        <div class="tag active" data-symbol="ETH" onclick="toggleCoin(this)">ETH</div>
+                        <div class="tag active" data-symbol="BNB" onclick="toggleCoin(this)">BNB</div>
+                        <div class="tag" data-symbol="SOL" onclick="toggleCoin(this)">SOL</div>
+                        <div class="tag" data-symbol="XRP" onclick="toggleCoin(this)">XRP</div>
+                        <div class="tag" data-symbol="ADA" onclick="toggleCoin(this)">ADA</div>
+                        <div class="tag" data-symbol="DOGE" onclick="toggleCoin(this)">DOGE</div>
+                        <div class="tag" data-symbol="AVAX" onclick="toggleCoin(this)">AVAX</div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">時間框架</label>
+                        <select id="dashboard-timeframe" class="form-control">
+                            <option value="1d">📅 日線 (1D)</option>
+                            <option value="1h">⏰ 小時線 (1H)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" onclick="getDashboardData()">🚀 獲取儀表板數據</button>
+                <div id="dashboard-loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>正在加載儀表板數據...</p>
+                </div>
+            </div>
+
+            <div id="dashboard-results" style="display: none;">
+                <div id="dashboard-alert-container"></div>
+
+                <div class="card">
+                    <div class="card-title">📊 多幣種預測對比</div>
+                    <div class="chart-container">
+                        <canvas id="comparison-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">💰 幣種綜合排名</div>
+                    <div class="dashboard-grid" id="dashboard-cards"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">📈 預測收益率分布</div>
+                    <div class="chart-container">
+                        <canvas id="return-chart"></canvas>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">信心度對比</div>
+                    <div class="chart-container">
+                        <canvas id="confidence-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div id="analysis" class="page">
             <div class="card">
                 <div class="card-title">📈 市場分析 - 最佳開單點位</div>
@@ -909,21 +1033,22 @@
         </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         const API_BASE = localStorage.getItem('api_endpoint') || 'http://localhost:8001';
         let currentDataSource = localStorage.getItem('dataSource') || 'yfinance';
         let currentAnalysisDataSource = localStorage.getItem('analysisDataSource') || 'yfinance';
         let autoRefreshInterval = null;
         let autoRefreshIntervalAnalysis = null;
+        let autoRefreshIntervalDashboard = null;
         let lastUpdateTime = null;
         let lastUpdateTimeAnalysis = null;
+        let lastUpdateTimeDashboard = null;
+        let dashboardCharts = {};
 
-        // 智能小數位數格式化函數
         function formatPrice(price) {
             if (!price || price === 0) return '0.00';
-            
             const priceStr = price.toString();
-            
             if (price < 0.0001) {
                 const match = priceStr.match(/^0\.(0+)/);
                 if (match) {
@@ -931,32 +1056,31 @@
                     return price.toFixed(zeros + 4).replace(/0+$/, '');
                 }
             }
-            
             if (price >= 1) {
                 const decimal = priceStr.split('.')[1];
                 if (!decimal) return price.toFixed(2);
-                
                 let validDecimals = decimal.replace(/0+$/, '');
                 if (validDecimals.length === 0) return Math.floor(price).toString();
-                
                 validDecimals = validDecimals.substring(0, 10);
                 return price.toString().split('.')[0] + '.' + validDecimals;
             }
-            
             const decimal = priceStr.split('.')[1];
             if (!decimal) return '0.00';
-            
             let validDecimals = decimal.replace(/0+$/, '');
             validDecimals = validDecimals.substring(0, 10);
-            
             return '0.' + validDecimals;
         }
 
-        // 更新最後更新時間
         function updateLastUpdateTime() {
             lastUpdateTime = new Date();
             const timeStr = lastUpdateTime.toLocaleTimeString('zh-TW');
             document.getElementById('last-update-time').innerHTML = `<span style="color: var(--success-color);">✅ 最後更新: ${timeStr}</span>`;
+        }
+
+        function updateLastUpdateTimeDashboard() {
+            lastUpdateTimeDashboard = new Date();
+            const timeStr = lastUpdateTimeDashboard.toLocaleTimeString('zh-TW');
+            document.getElementById('last-update-time-dashboard').innerHTML = `<span style="color: var(--success-color);">✅ 最後更新: ${timeStr}</span>`;
         }
 
         function updateLastUpdateTimeAnalysis() {
@@ -965,12 +1089,10 @@
             document.getElementById('last-update-time-analysis').innerHTML = `<span style="color: var(--success-color);">✅ 最後更新: ${timeStr}</span>`;
         }
 
-        // 更新自動更新指示器
         function updateAutoRefreshIndicator() {
             const interval = document.getElementById('auto-refresh-interval').value;
             const indicator = document.getElementById('refresh-indicator');
             const timeSpan = document.getElementById('refresh-time');
-            
             if (interval) {
                 indicator.classList.remove('off');
                 timeSpan.textContent = `自動更新: 每${interval}秒`;
@@ -980,84 +1102,222 @@
             }
         }
 
-        // 更新自動更新間隔
         function updateAutoRefreshInterval() {
             const interval = document.getElementById('auto-refresh-interval').value;
-            
-            if (autoRefreshInterval) {
-                clearInterval(autoRefreshInterval);
-                autoRefreshInterval = null;
-            }
-            
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
             if (interval) {
                 autoRefreshInterval = setInterval(() => {
-                    const hasResults = document.getElementById('results').style.display !== 'none';
-                    if (hasResults) {
+                    if (document.getElementById('results').style.display !== 'none') {
                         getPrediction();
                     }
                 }, parseInt(interval) * 1000);
             }
-            
             updateAutoRefreshIndicator();
+        }
+
+        function updateAutoRefreshIntervalDashboard() {
+            const interval = document.getElementById('auto-refresh-interval-dashboard').value;
+            if (autoRefreshIntervalDashboard) clearInterval(autoRefreshIntervalDashboard);
+            autoRefreshIntervalDashboard = null;
+            if (interval) {
+                autoRefreshIntervalDashboard = setInterval(() => {
+                    if (document.getElementById('dashboard-results').style.display !== 'none') {
+                        getDashboardData();
+                    }
+                }, parseInt(interval) * 1000);
+            }
         }
 
         function updateAutoRefreshIntervalAnalysis() {
             const interval = document.getElementById('auto-refresh-interval-analysis').value;
-            
-            if (autoRefreshIntervalAnalysis) {
-                clearInterval(autoRefreshIntervalAnalysis);
-                autoRefreshIntervalAnalysis = null;
-            }
-            
+            if (autoRefreshIntervalAnalysis) clearInterval(autoRefreshIntervalAnalysis);
+            autoRefreshIntervalAnalysis = null;
             if (interval) {
                 autoRefreshIntervalAnalysis = setInterval(() => {
-                    const hasResults = document.getElementById('analysis-results').style.display !== 'none';
-                    if (hasResults) {
+                    if (document.getElementById('analysis-results').style.display !== 'none') {
                         performMarketAnalysis();
                     }
                 }, parseInt(interval) * 1000);
             }
         }
 
-        // 手動刷新
         function manualRefresh() {
             const predictionActive = document.getElementById('results').style.display !== 'none';
+            const dashboardActive = document.getElementById('dashboard-results').style.display !== 'none';
             const analysisActive = document.getElementById('analysis-results').style.display !== 'none';
             
-            if (predictionActive) {
-                getPrediction();
-            } else if (analysisActive) {
-                performMarketAnalysis();
-            }
+            if (predictionActive) getPrediction();
+            else if (dashboardActive) getDashboardData();
+            else if (analysisActive) performMarketAnalysis();
         }
 
-        // 測試自動更新
         function testAutoRefresh() {
-            alert('✅ 測試開始！將在當前設置的間隔內自動更新預測數據。');
+            alert('測試開始！將在當前設置的間隔內自動更新預測數據。');
             updateAutoRefreshInterval();
         }
 
+        function testAutoRefreshDashboard() {
+            alert('測試開始！將在當前設置的間隔內自動更新儀表板數據。');
+            updateAutoRefreshIntervalDashboard();
+        }
+
         function testAutoRefreshAnalysis() {
-            alert('✅ 測試開始！將在當前設置的間隔內自動更新市場分析數據。');
+            alert('測試開始！將在當前設置的間隔內自動更新市場分析數據。');
             updateAutoRefreshIntervalAnalysis();
         }
 
-        // 初始化
+        function toggleCoin(element) {
+            element.classList.toggle('active');
+        }
+
+        function getSelectedCoins() {
+            return Array.from(document.querySelectorAll('#coin-selector .tag.active')).map(tag => tag.getAttribute('data-symbol'));
+        }
+
+        async function getDashboardData() {
+            const coins = getSelectedCoins();
+            if (coins.length === 0) {
+                showDashboardAlert('error', '請至少選擇一個幣種');
+                return;
+            }
+
+            const timeframe = document.getElementById('dashboard-timeframe').value;
+            document.getElementById('dashboard-loading').style.display = 'block';
+            document.getElementById('dashboard-results').style.display = 'none';
+            document.getElementById('dashboard-alert-container').innerHTML = '';
+
+            try {
+                const predictions = await Promise.all(
+                    coins.map(symbol => 
+                        fetch(`${API_BASE}/predict-v5`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ symbol, timeframe, use_binance: false })
+                        }).then(r => r.json())
+                    )
+                );
+
+                displayDashboardResults(coins, predictions);
+                updateLastUpdateTimeDashboard();
+            } catch (error) {
+                showDashboardAlert('error', '連接錯誤：' + error.message);
+            } finally {
+                document.getElementById('dashboard-loading').style.display = 'none';
+            }
+        }
+
+        function displayDashboardResults(coins, predictions) {
+            const cardsHtml = coins.map((coin, idx) => {
+                const p = predictions[idx];
+                if (!p || p.detail) return '';
+                const returnPercent = (p.log_return * 100).toFixed(2);
+                const returnClass = returnPercent > 0 ? 'positive' : 'negative';
+                return `
+                    <div class="dashboard-card">
+                        <h3>${coin}</h3>
+                        <div class="dashboard-value ${returnClass}">
+                            ${returnPercent > 0 ? '+' : ''}${returnPercent}%
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.5rem;">
+                            信心度: ${(p.confidence * 100).toFixed(0)}%
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('dashboard-cards').innerHTML = cardsHtml;
+            drawDashboardCharts(coins, predictions);
+            document.getElementById('dashboard-results').style.display = 'block';
+            showDashboardAlert('success', '儀表板數據加載完成');
+        }
+
+        function drawDashboardCharts(coins, predictions) {
+            const returns = predictions.map(p => p.log_return * 100);
+            const confidences = predictions.map(p => p.confidence * 100);
+
+            const ctx1 = document.getElementById('comparison-chart');
+            if (dashboardCharts.comparison) dashboardCharts.comparison.destroy();
+            dashboardCharts.comparison = new Chart(ctx1, {
+                type: 'bar',
+                data: {
+                    labels: coins,
+                    datasets: [{
+                        label: '預測收益率 (%)',
+                        data: returns,
+                        backgroundColor: returns.map(r => r > 0 ? 'rgba(76, 175, 80, 0.7)' : 'rgba(244, 67, 54, 0.7)'),
+                        borderColor: returns.map(r => r > 0 ? 'rgb(76, 175, 80)' : 'rgb(244, 67, 54)'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            const ctx2 = document.getElementById('return-chart');
+            if (dashboardCharts.return) dashboardCharts.return.destroy();
+            dashboardCharts.return = new Chart(ctx2, {
+                type: 'line',
+                data: {
+                    labels: coins,
+                    datasets: [{
+                        label: '預測收益率分布',
+                        data: returns,
+                        borderColor: 'rgb(33, 150, 243)',
+                        backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                        tension: 0.3,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: true } },
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+
+            const ctx3 = document.getElementById('confidence-chart');
+            if (dashboardCharts.confidence) dashboardCharts.confidence.destroy();
+            dashboardCharts.confidence = new Chart(ctx3, {
+                type: 'radar',
+                data: {
+                    labels: coins,
+                    datasets: [{
+                        label: '信心度 (%)',
+                        data: confidences,
+                        borderColor: 'rgb(33, 150, 243)',
+                        backgroundColor: 'rgba(33, 150, 243, 0.2)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { r: { beginAtZero: true, max: 100 } }
+                }
+            });
+        }
+
+        function showDashboardAlert(type, message) {
+            const container = document.getElementById('dashboard-alert-container');
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => { container.innerHTML = ''; }, 5000);
+        }
+
         function init() {
             const theme = localStorage.getItem('theme') || 'light';
-            if (theme === 'dark') {
-                document.body.classList.add('dark-mode');
-            }
+            if (theme === 'dark') document.body.classList.add('dark-mode');
             document.getElementById('api-endpoint').value = API_BASE;
             updateAutoRefreshIndicator();
-            
-            // 保存自動更新間隔
             const savedInterval = localStorage.getItem('autoRefreshInterval') || '60';
             document.getElementById('auto-refresh-interval').value = savedInterval;
             updateAutoRefreshInterval();
         }
 
-        // 切換頁面
         function switchPage(pageName) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
             document.querySelectorAll('.sidebar-item').forEach(i => i.classList.remove('active'));
@@ -1066,7 +1326,6 @@
             closeSidebar();
         }
 
-        // 切換側邊欄
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('active');
         }
@@ -1075,7 +1334,6 @@
             document.getElementById('sidebar').classList.remove('active');
         }
 
-        // 切換深色模式
         function toggleTheme() {
             document.body.classList.toggle('dark-mode');
             const isDark = document.body.classList.contains('dark-mode');
@@ -1083,22 +1341,16 @@
         }
 
         function setTheme(theme) {
-            if (theme === 'dark') {
-                document.body.classList.add('dark-mode');
-            } else {
-                document.body.classList.remove('dark-mode');
-            }
+            if (theme === 'dark') document.body.classList.add('dark-mode');
+            else document.body.classList.remove('dark-mode');
             localStorage.setItem('theme', theme);
         }
 
-        // 數據源選擇
         function setDataSource(source, element) {
             currentDataSource = source;
             localStorage.setItem('dataSource', source);
-            
             document.querySelectorAll('.tag-group')[0].querySelectorAll('.tag').forEach(t => t.classList.remove('active'));
             element.classList.add('active');
-            
             const infoMap = {
                 'yfinance': '使用 yfinance（推薦，確保 1D/1H 價格一致）',
                 'binance': '使用 Binance API（實時性更好）'
@@ -1106,11 +1358,9 @@
             document.getElementById('source-info').textContent = infoMap[source];
         }
 
-        // 市場分析數據源選擇
         function setAnalysisDataSource(source, element) {
             currentAnalysisDataSource = source;
             localStorage.setItem('analysisDataSource', source);
-            
             const groups = document.querySelectorAll('.tag-group');
             if (groups[1]) {
                 groups[1].querySelectorAll('.tag').forEach(t => t.classList.remove('active'));
@@ -1118,11 +1368,9 @@
             }
         }
 
-        // 獲取預測
         async function getPrediction() {
             const symbol = document.getElementById('symbol').value;
             const timeframe = document.getElementById('timeframe').value;
-            
             document.getElementById('loading').style.display = 'block';
             document.getElementById('results').style.display = 'none';
             document.getElementById('alert-container').innerHTML = '';
@@ -1139,7 +1387,6 @@
                 });
 
                 const data = await response.json();
-
                 if (response.ok) {
                     displayResults(data);
                     updateLastUpdateTime();
@@ -1153,11 +1400,9 @@
             }
         }
 
-        // 執行市場分析
         async function performMarketAnalysis() {
             const symbol = document.getElementById('analysis-symbol').value;
             const timeframe = document.getElementById('analysis-timeframe').value;
-            
             document.getElementById('analysis-loading').style.display = 'block';
             document.getElementById('analysis-results').style.display = 'none';
             document.getElementById('analysis-alert-container').innerHTML = '';
@@ -1174,7 +1419,6 @@
                 });
 
                 const data = await response.json();
-
                 if (response.ok) {
                     displayAnalysisResults(data);
                     updateLastUpdateTimeAnalysis();
@@ -1188,51 +1432,37 @@
             }
         }
 
-        // 顯示分析結果
         function displayAnalysisResults(data) {
-            // 趨勢判斷
             const trendElement = document.getElementById('trend-direction');
             const trendClass = data.trend.direction === 'uptrend' ? 'uptrend' : 'downtrend';
             const trendText = data.trend.direction === 'uptrend' ? '多頭' : '空頭';
             trendElement.textContent = trendText;
             trendElement.className = `trend-indicator ${trendClass}`;
-            
             document.getElementById('trend-desc').textContent = data.trend.description;
             document.getElementById('trend-strength').textContent = `${(data.trend.strength * 100).toFixed(0)}%`;
             document.getElementById('consecutive-up').textContent = `${data.trend.consecutive_bars}根`;
-            
             const returnValue = document.getElementById('avg-return');
             const avgReturn = data.trend.average_return * 100;
             returnValue.textContent = `${avgReturn > 0 ? '+' : ''}${avgReturn.toFixed(2)}%`;
             returnValue.className = avgReturn > 0 ? 'analysis-value positive' : 'analysis-value negative';
-
-            // 最佳入場點
             document.getElementById('best-entry').textContent = `+${data.best_entry_bar}`;
             document.getElementById('lowest-price').textContent = `$${formatPrice(data.price_extremes.lowest_price)}`;
             document.getElementById('lowest-bar').textContent = `第${data.price_extremes.lowest_bar}根K棒出現`;
             document.getElementById('highest-price').textContent = `$${formatPrice(data.price_extremes.highest_price)}`;
             document.getElementById('highest-bar').textContent = `第${data.price_extremes.highest_bar}根K棒出現`;
-            
             const profitValue = document.getElementById('potential-profit');
             const profit = data.price_extremes.potential_profit * 100;
             profitValue.textContent = `${profit > 0 ? '+' : ''}${profit.toFixed(2)}%`;
             profitValue.className = profit > 0 ? 'analysis-value positive' : 'analysis-value negative';
-
-            // 詳細建議
             document.getElementById('analysis-recommendation').textContent = data.recommendation;
-
-            // 繪製預測圖表
             drawAnalysisForecastChart(data);
-
             document.getElementById('analysis-results').style.display = 'block';
-            showAnalysisAlert('success', '✅ 市場分析完成！');
+            showAnalysisAlert('success', '市場分析完成');
         }
 
-        // 繪製分析預測圖表
         function drawAnalysisForecastChart(data) {
             const chart = document.getElementById('analysis-forecast-chart');
             chart.innerHTML = '';
-            
             const prices = data.forecast_prices;
             const minPrice = Math.min(...prices);
             const maxPrice = Math.max(...prices);
@@ -1240,24 +1470,16 @@
             const bestBar = data.best_entry_bar;
             const lowestBar = data.price_extremes.lowest_bar;
             const highestBar = data.price_extremes.highest_bar;
-
             prices.forEach((price, index) => {
                 const height = ((price - minPrice) / priceSpan) * 200;
                 const isPositive = index > 0 && price >= prices[index - 1];
                 const barNum = index + 1;
-                
                 const item = document.createElement('div');
                 item.className = 'kline-item';
-                
                 const bar = document.createElement('div');
                 bar.className = `kline-bar ${isPositive ? 'positive' : 'negative'}`;
                 bar.style.height = Math.max(20, height) + 'px';
-
-                // 標記最佳入場點
-                if (barNum === bestBar) {
-                    bar.classList.add('best-entry');
-                }
-
+                if (barNum === bestBar) bar.classList.add('best-entry');
                 const tooltip = document.createElement('div');
                 tooltip.className = 'kline-tooltip';
                 let tooltipText = `$${formatPrice(price)}`;
@@ -1266,110 +1488,82 @@
                 if (barNum === highestBar) tooltipText += ' 最高點';
                 tooltip.textContent = tooltipText;
                 bar.appendChild(tooltip);
-                
                 const label = document.createElement('div');
                 label.className = 'kline-label';
                 let labelText = `+${barNum}`;
                 if (barNum === bestBar) labelText += ' ⭐';
                 label.textContent = labelText;
-                
                 item.appendChild(bar);
                 item.appendChild(label);
                 chart.appendChild(item);
             });
         }
 
-        // 顯示結果
         function displayResults(data) {
             document.getElementById('current-price').textContent = `$${formatPrice(data.current_price)}`;
             document.getElementById('predicted-price').textContent = `$${formatPrice(data.predicted_price)}`;
-            
             const returnPercent = (data.log_return * 100).toFixed(2);
             const returnElement = document.getElementById('log-return');
             returnElement.textContent = `${returnPercent > 0 ? '+' : ''}${returnPercent}%`;
             returnElement.className = 'result-card-value ' + (returnPercent > 0 ? 'positive' : 'negative');
-            
             document.getElementById('confidence').textContent = `${(data.confidence * 100).toFixed(2)}%`;
-            
             const recElement = document.getElementById('recommendation');
             recElement.textContent = data.recommendation;
             recElement.className = 'recommendation ' + data.recommendation.toLowerCase();
-            
             document.getElementById('entry-price').textContent = formatPrice(data.entry_price);
             document.getElementById('stop-loss').textContent = formatPrice(data.stop_loss);
             document.getElementById('take-profit').textContent = formatPrice(data.take_profit);
-            
             document.getElementById('volatility-current').textContent = data.volatility.current.toFixed(4);
             document.getElementById('volatility-predicted').textContent = data.volatility.predicted.toFixed(4);
             document.getElementById('volatility-level').textContent = data.volatility.level;
             document.getElementById('atr-14').textContent = formatPrice(data.volatility.atr_14);
-            
             document.getElementById('info-source').textContent = data.price_source;
             document.getElementById('info-model').textContent = data.model_version;
             document.getElementById('info-time').textContent = new Date(data.timestamp).toLocaleString('zh-TW');
-            
             drawForecastChart(data.current_price, data.predicted_price, data.log_return);
             displayKlines(data.klines);
-            
             document.getElementById('results').style.display = 'block';
-            showAlert('success', '✅ 預測成功！');
+            showAlert('success', '預測成功');
         }
 
-        // 繪製未來10根K棒預測
         function drawForecastChart(currentPrice, predictedPrice, logReturn) {
             const chart = document.getElementById('forecast-chart');
             chart.innerHTML = '';
-            
             const priceRange = Math.abs(currentPrice * 0.05);
             const minPrice = Math.min(currentPrice, predictedPrice) - priceRange;
             const maxPrice = Math.max(currentPrice, predictedPrice) + priceRange;
             const priceSpan = maxPrice - minPrice;
-            
             for (let i = 0; i < 10; i++) {
                 const progress = (i + 1) / 10;
                 const forecastPrice = currentPrice + (predictedPrice - currentPrice) * progress;
                 const variance = (Math.random() - 0.5) * priceRange;
                 const kPrice = forecastPrice + variance;
-                
                 const height = ((kPrice - minPrice) / priceSpan) * 200;
                 const isPositive = kPrice >= currentPrice;
-                
                 const item = document.createElement('div');
                 item.className = 'kline-item';
-                
                 const bar = document.createElement('div');
                 bar.className = `kline-bar ${isPositive ? 'positive' : 'negative'}`;
                 bar.style.height = Math.max(20, height) + 'px';
-                
                 const tooltip = document.createElement('div');
                 tooltip.className = 'kline-tooltip';
                 tooltip.textContent = `$${formatPrice(kPrice)}`;
                 bar.appendChild(tooltip);
-                
                 const label = document.createElement('div');
                 label.className = 'kline-label';
                 label.textContent = `+${i + 1}`;
-                
                 item.appendChild(bar);
                 item.appendChild(label);
                 chart.appendChild(item);
             }
         }
 
-        // 顯示最近K線
         function displayKlines(klines) {
             const tbody = document.getElementById('klines-table');
             tbody.innerHTML = '';
-            
             klines.forEach(k => {
                 const row = document.createElement('tr');
-                const time = new Date(k.timestamp).toLocaleString('zh-TW', { 
-                    month: '2-digit', 
-                    day: '2-digit', 
-                    hour: '2-digit', 
-                    minute: '2-digit' 
-                });
-                
+                const time = new Date(k.timestamp).toLocaleString('zh-TW', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
                 row.style.borderBottom = `1px solid var(--border-color)`;
                 row.innerHTML = `
                     <td style="padding: 0.5rem;">${time}</td>
@@ -1383,34 +1577,26 @@
             });
         }
 
-        // 顯示提示
         function showAlert(type, message) {
             const container = document.getElementById('alert-container');
             container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
-            setTimeout(() => {
-                container.innerHTML = '';
-            }, 5000);
+            setTimeout(() => { container.innerHTML = ''; }, 5000);
         }
 
-        // 顯示分析提示
         function showAnalysisAlert(type, message) {
             const container = document.getElementById('analysis-alert-container');
             container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
-            setTimeout(() => {
-                container.innerHTML = '';
-            }, 5000);
+            setTimeout(() => { container.innerHTML = ''; }, 5000);
         }
 
-        // 保存設定
         function saveSettings() {
             const endpoint = document.getElementById('api-endpoint').value;
             localStorage.setItem('api_endpoint', endpoint);
             localStorage.setItem('autoRefreshInterval', document.getElementById('auto-refresh-interval').value);
-            showAlert('success', '✅ 設定已保存');
+            showAlert('success', '設定已保存');
             setTimeout(() => location.reload(), 1500);
         }
 
-        // 初始化
         init();
     </script>
 </body>
