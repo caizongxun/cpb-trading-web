@@ -3,6 +3,7 @@
 """
 CPB Trading - Prediction Dashboard
 支持 V5/V6 版本選擇，多幣種複選，未來 10 根 K 棒預測可視化
+動態棂探實際上有的模型，而不是依賴預訮的幣種清單
 """
 
 import os
@@ -10,7 +11,7 @@ import pickle
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Set
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from pathlib import Path
@@ -24,7 +25,7 @@ except:
     HAS_TENSORFLOW = False
 
 try:
-    from huggingface_hub import hf_hub_download
+    from huggingface_hub import hf_hub_download, list_repo_files
     HAS_HF = True
 except:
     HAS_HF = False
@@ -62,14 +63,13 @@ class PredictionForecast(BaseModel):
 class ModelManager:
     """管理 V5 和 V6 模型的上載、初始化並執行預測"""
     
-    # V5 支持的幣種 (原始訓練幣種) - 14種
-    V5_COINS = [
+    # 預訮的幣種 (如果沒有指定其他的候選)
+    FALLBACK_V5_COINS = [
         'BTC', 'ETH', 'BNB', 'ADA', 'SOL', 'XRP', 'DOGE', 'ATOM',
         'DOT', 'LTC', 'LINK', 'UNI', 'AVAX', 'XLM'
     ]
     
-    # V6 支持的幣種 (更多訓練幣種) - 14+種
-    V6_COINS = [
+    FALLBACK_V6_COINS = [
         'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'AVAX', 'DOGE', 'ADA',
         'DOT', 'LTC', 'LINK', 'ATOM', 'UNI', 'XLM', 'MATIC', 'ARB'
     ]
@@ -77,21 +77,69 @@ class ModelManager:
     def __init__(self):
         self.models_cache = {}  # {version}-{symbol}-{timeframe}: model
         self.scalers_cache = {}  # {version}-{symbol}-{timeframe}: scaler
+        self.available_coins_cache = {}  # {version}: [coins]
         self.hf_available = HAS_HF
         self.tf_available = HAS_TENSORFLOW
+        
         logger.info(f"ModelManager 初始化: TF={self.tf_available}, HF={self.hf_available}")
+        
+        # 立即棂探可用的幣種
+        self._discover_available_coins()
+    
+    def _discover_available_coins(self):
+        """從 HuggingFace 模型倉庫棂探實際可用的幣種"""
+        logger.info("開始棂探 HuggingFace 模型倉庫中的幣種...")
+        
+        for version in ['V5', 'V6']:
+            coins: Set[str] = set()
+            
+            if not self.hf_available:
+                logger.warning(f"{version}: HuggingFace 不可用，使用預訮值")
+                coins = set(self.FALLBACK_V5_COINS if version == 'V5' else self.FALLBACK_V6_COINS)
+            else:
+                try:
+                    logger.info(f"{version}: 正在查詢 HuggingFace...")
+                    
+                    # 列出模型倉庫中的所有模型檔
+                    files = list_repo_files(
+                        repo_id="zongowo111/cpb-models",
+                        repo_type="dataset"
+                    )
+                    
+                    # 歷遍檔案，找出此版本的模型
+                    for file_path in files:
+                        # 例如: models_v5/BTC_1h_model.h5 或 models_v6/ETH_1d_model.h5
+                        if f'models_{version.lower()}/' in file_path and '_model.h5' in file_path:
+                            # 拆解檔案名
+                            parts = file_path.split('/')[-1]  # 取最後一部分
+                            symbol = parts.split('_')[0]  # 取 BTC 或 ETH
+                            coins.add(symbol)
+                    
+                    if coins:
+                        logger.info(f"{version}: 找到 {len(coins)} 個幣種: {sorted(coins)}")
+                    else:
+                        logger.warning(f"{version}: 沒有找到模型，使用預訮值")
+                        coins = set(self.FALLBACK_V5_COINS if version == 'V5' else self.FALLBACK_V6_COINS)
+                
+                except Exception as e:
+                    logger.error(f"{version}: 棂探失敗 - {e}，使用預訮值")
+                    coins = set(self.FALLBACK_V5_COINS if version == 'V5' else self.FALLBACK_V6_COINS)
+            
+            # 存储排序的幣種
+            self.available_coins_cache[version] = sorted(list(coins))
+        
+        logger.info(f"幣種棂探完成")
+        logger.info(f"V5 ({len(self.available_coins_cache['V5'])} 種): {self.available_coins_cache['V5']}")
+        logger.info(f"V6 ({len(self.available_coins_cache['V6'])} 種): {self.available_coins_cache['V6']}")
     
     def check_coin_support(self, symbol: str, version: str) -> bool:
         """檢查幣種是否支持此版本"""
-        if version == 'V5':
-            return symbol in self.V5_COINS
-        elif version == 'V6':
-            return symbol in self.V6_COINS
-        return False
+        available = self.available_coins_cache.get(version, [])
+        return symbol in available
     
     def get_available_coins(self, version: str) -> List[str]:
         """取得此版本支持的幣種"""
-        return self.V5_COINS if version == 'V5' else self.V6_COINS
+        return self.available_coins_cache.get(version, [])
     
     async def load_model(self, symbol: str, version: str, timeframe: str = '1h'):
         """從 HuggingFace 下載模型"""
@@ -183,7 +231,6 @@ class ModelManager:
         
         if not model_loaded:
             logger.warning(f"缺少真實模型, 使用綜合數據")
-            # 綜合數據: 安靜程度常規趨勢
             return self._generate_synthetic_forecast(
                 historical_prices,
                 symbol,
@@ -261,7 +308,7 @@ class ModelManager:
             past_avg = prices[-20:-10].mean()
             trend = (recent_avg - past_avg) / past_avg if past_avg > 0 else 0
         else:
-            trend = 0.001  # 準備是法撤趨勢
+            trend = 0.001
         
         # 計算波動性
         returns = np.diff(prices) / prices[:-1]
@@ -275,7 +322,7 @@ class ModelManager:
         
         for i in range(steps_ahead):
             # 趨勢的影響
-            trend_component = trend * (1 - i / steps_ahead)  # 遞減衰減趨勢
+            trend_component = trend * (1 - i / steps_ahead)
             volatility_component = np.random.normal(0, volatility)
             
             price_change = (trend_component + volatility_component) * price
@@ -286,7 +333,7 @@ class ModelManager:
         return {
             'success': True,
             'forecast_prices': forecast,
-            'confidence': 0.45,  # 低信心度表示綜合
+            'confidence': 0.45,
             'model_loaded': False,
             'trend': trend,
             'volatility': volatility
@@ -383,19 +430,26 @@ async def predict_forecast(
 
 @app.get("/")
 async def root():
+    v5_coins = model_manager.get_available_coins('V5')
+    v6_coins = model_manager.get_available_coins('V6')
+    
     return {
         "name": "CPB Prediction Dashboard",
         "version": "2.0.0",
         "features": [
             "V5/V6 版本選擇",
-            "多幣種自動偵測",
+            "多幣種自動棂探",
             "未來 10 根 K 棒預測",
             "真實模型自動下載 (HuggingFace)",
             "綜合數據回退機制"
         ],
         "coin_counts": {
-            "V5": len(ModelManager.V5_COINS),
-            "V6": len(ModelManager.V6_COINS)
+            "V5": len(v5_coins),
+            "V6": len(v6_coins)
+        },
+        "available_coins": {
+            "V5": v5_coins,
+            "V6": v6_coins
         },
         "endpoints": {
             "/predict/available-coins": "取得各版本支援的幣種",
@@ -407,14 +461,17 @@ async def root():
 if __name__ == "__main__":
     import uvicorn
     
+    v5_coins = model_manager.get_available_coins('V5')
+    v6_coins = model_manager.get_available_coins('V6')
+    
     print("""
 ================================================================================
-               CPB Prediction Dashboard - V2.0
+               CPB Prediction Dashboard - V2.1
 ================================================================================
 
 Features:
   ✓ V5/V6 版本選擇
-  ✓ 多幣種支援 (V5: 14種, V6: 16+種)
+  ✓ 動態棂探 HuggingFace 中的幣種
   ✓ 未來 10 根 K 棒預測
   ✓ 真實模型自動下載
   ✓ 綜合數據回退
@@ -425,15 +482,23 @@ Available Endpoints:
   GET  /docs
 
 Model Management:
-  TensorFlow Available: True
-  HuggingFace Available: True
+  TensorFlow Available: {}
+  HuggingFace Available: {}
   Model Cache: ./models_cache
 
-V5 Coins (14): BTC, ETH, BNB, ADA, SOL, XRP, DOGE, ATOM, DOT, LTC, LINK, UNI, AVAX, XLM
-V6 Coins (16+): BTC, ETH, BNB, SOL, XRP, AVAX, DOGE, ADA, DOT, LTC, LINK, ATOM, UNI, XLM, MATIC, ARB
+Detected Coins:
+  V5 ({}): {}
+  V6 ({}): {}
 
 ================================================================================
-    """)
+    """.format(
+        HAS_TENSORFLOW,
+        HAS_HF,
+        len(v5_coins),
+        ', '.join(v5_coins),
+        len(v6_coins),
+        ', '.join(v6_coins)
+    ))
     
     uvicorn.run(
         app,
