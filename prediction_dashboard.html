@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPB Prediction Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .controls {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .control-group label {
+            font-weight: 600;
+            color: #1e3c72;
+            font-size: 0.95em;
+        }
+        
+        .control-group select,
+        .control-group input {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: all 0.3s ease;
+        }
+        
+        .control-group select:focus,
+        .control-group input:focus {
+            outline: none;
+            border-color: #2a5298;
+            box-shadow: 0 0 8px rgba(42, 82, 152, 0.3);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            grid-column: 1 / -1;
+        }
+        
+        .btn {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .btn-predict {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-predict:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-reset {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-reset:hover {
+            background: #e0e0e0;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .card h2 {
+            color: #1e3c72;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .price-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        
+        .price-label {
+            font-weight: 600;
+            color: #666;
+        }
+        
+        .price-value {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #1e3c72;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+        
+        .forecast-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        
+        .forecast-table thead {
+            background: #f0f0f0;
+        }
+        
+        .forecast-table th,
+        .forecast-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .forecast-table th {
+            font-weight: 600;
+            color: #1e3c72;
+        }
+        
+        .forecast-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .confidence {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+        
+        .confidence-high {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .confidence-medium {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .confidence-low {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-top: 20px;
+        }
+        
+        .info-box {
+            background: #e7f3ff;
+            border-left: 4px solid #2a5298;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 20px;
+            font-size: 0.95em;
+            color: #333;
+        }
+        
+        .info-box strong {
+            color: #1e3c72;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+        }
+        
+        .success {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 20px;
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                grid-template-columns: 1fr;
+            }
+            
+            .header h1 {
+                font-size: 1.8em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CPB Prediction Dashboard</h1>
+            <p>選擇版本 (V5/V6) • 加密貨幣 • 未来 10 根預測</p>
+        </div>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label>模弋版本</label>
+                <select id="version">
+                    <option value="V6">🌟 V6 (上新，推荑)</option>
+                    <option value="V5">🌙 V5 (稳定版本)</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>幣種</label>
+                <select id="symbol">
+                    <option>-- 請先選擇版本 --</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>時間核</label>
+                <select id="timeframe">
+                    <option value="1h">∱ 1 小時</option>
+                    <option value="1d">📅 1 天</option>
+                </select>
+            </div>
+            
+            <div class="control-group">
+                <label>筒旧根數 (CSV)</label>
+                <input type="text" id="historicalPrices" placeholder="e.g., 40000, 40100, 40200">
+            </div>
+            
+            <div class="button-group">
+                <button class="btn btn-predict" onclick="predictForecast()">&#128520; 預測上次 10 根</button>
+                <button class="btn btn-reset" onclick="resetForm()">↺ 重置</button>
+            </div>
+        </div>
+        
+        <div id="result" style="display:none;">
+            <div class="dashboard">
+                <div class="card">
+                    <h2>📊 預測結果</h2>
+                    
+                    <div class="price-info">
+                        <span class="price-label">當前價格</span>
+                        <span class="price-value" id="currentPrice">-</span>
+                    </div>
+                    
+                    <div class="price-info">
+                        <span class="price-label">称値 (10 根後)</span>
+                        <span class="price-value" id="avgForecastPrice">-</span>
+                    </div>
+                    
+                    <div class="stats">
+                        <div class="stat-item">
+                            <div class="stat-label">最高價</div>
+                            <div class="stat-value" id="maxPrice">-</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">最低價</div>
+                            <div class="stat-value" id="minPrice">-</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">伊信度</div>
+                            <div class="stat-value" id="confidence">-</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">模弋狀態</div>
+                            <div class="stat-value" id="modelStatus">-</div>
+                        </div>
+                    </div>
+                    
+                    <div class="chart-container">
+                        <canvas id="priceChart"></canvas>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h2>📄 預測詳詳</h2>
+                    <table class="forecast-table">
+                        <thead>
+                            <tr>
+                                <th>K 棒</th>
+                                <th>預測價</th>
+                                <th>伊信度</th>
+                            </tr>
+                        </thead>
+                        <tbody id="forecastTable">
+                        </tbody>
+                    </table>
+                    
+                    <div class="info-box">
+                        <strong>📚 版本資訊:</strong><br>
+                        <span id="versionInfo">-</span><br><br>
+                        <strong>📅 時間:</strong><br>
+                        <span id="timestamp">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="loading" style="display:none;">
+            <div class="card">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>正在預測中...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let chart = null;
+        const API_URL = window.location.origin; // 会自動是目前筑埡
+        
+        // 按版本更新幣種
+        document.getElementById('version').addEventListener('change', async (e) => {
+            const version = e.target.value;
+            const symbolSelect = document.getElementById('symbol');
+            
+            try {
+                const response = await fetch(`${API_URL}/predict/available-coins`);
+                const data = await response.json();
+                const coins = data[version] || [];
+                
+                symbolSelect.innerHTML = coins.map(coin => 
+                    `<option value="${coin}">${coin}</option>`
+                ).join('');
+                
+                if (coins.length === 0) {
+                    symbolSelect.innerHTML = '<option>-- 沒有可用的幣種 --</option>';
+                }
+            } catch (error) {
+                console.error('加載幣種失敗:', error);
+                symbolSelect.innerHTML = '<option>-- 加載失敗 --</option>';
+            }
+        });
+        
+        async function predictForecast() {
+            const version = document.getElementById('version').value;
+            const symbol = document.getElementById('symbol').value;
+            const timeframe = document.getElementById('timeframe').value;
+            const pricesInput = document.getElementById('historicalPrices').value;
+            
+            // 驗證
+            if (!version || !symbol) {
+                alert('請選擇版本和幣種');
+                return;
+            }
+            
+            let historicalPrices = null;
+            if (pricesInput) {
+                try {
+                    historicalPrices = pricesInput.split(',').map(p => parseFloat(p.trim()));
+                    if (historicalPrices.some(isNaN)) throw new Error();
+                } catch {
+                    alert('價格格式錙誤');
+                    return;
+                }
+            }
+            
+            // 顯示載入
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('result').style.display = 'none';
+            
+            try {
+                const params = new URLSearchParams({
+                    symbol,
+                    version,
+                    timeframe
+                });
+                
+                if (historicalPrices) {
+                    params.append('historical_prices', JSON.stringify(historicalPrices));
+                }
+                
+                const response = await fetch(`${API_URL}/predict/forecast?${params}`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || '預測失敗');
+                }
+                
+                const result = await response.json();
+                displayResult(result);
+            } catch (error) {
+                console.error('預測失敗:', error);
+                alert(`錯誤: ${error.message}`);
+            } finally {
+                document.getElementById('loading').style.display = 'none';
+            }
+        }
+        
+        function displayResult(result) {
+            const forecasts = result.forecast_bars;
+            const currentPrice = result.current_price;
+            const lastCloses = result.last_10_closes;
+            
+            // 價格資訊
+            document.getElementById('currentPrice').textContent = `$${currentPrice.toFixed(2)}`;
+            
+            const avgForecast = forecasts.reduce((sum, f) => sum + f.predicted_price, 0) / forecasts.length;
+            document.getElementById('avgForecastPrice').textContent = `$${avgForecast.toFixed(2)}`;
+            
+            const prices = forecasts.map(f => f.predicted_price);
+            const maxPrice = Math.max(...prices);
+            const minPrice = Math.min(...prices);
+            
+            document.getElementById('maxPrice').textContent = `$${maxPrice.toFixed(2)}`;
+            document.getElementById('minPrice').textContent = `$${minPrice.toFixed(2)}`;
+            document.getElementById('confidence').textContent = `${(forecasts[0].confidence * 100).toFixed(0)}%`;
+            document.getElementById('modelStatus').textContent = result.model_status === 'loaded' ? '📐 真實' : '📄 綜合';
+            
+            // 須表
+            const tableHtml = forecasts.map((f, i) => {
+                const confidenceClass = f.confidence > 0.7 ? 'confidence-high' : 
+                                       f.confidence > 0.5 ? 'confidence-medium' : 'confidence-low';
+                return `
+                    <tr>
+                        <td><strong>#${f.bar_index}</strong></td>
+                        <td>$${f.predicted_price.toFixed(2)}</td>
+                        <td><span class="confidence ${confidenceClass}">${(f.confidence * 100).toFixed(0)}%</span></td>
+                    </tr>
+                `;
+            }).join('');
+            document.getElementById('forecastTable').innerHTML = tableHtml;
+            
+            // 版本詳
+            document.getElementById('versionInfo').textContent = `${result.version} | ${result.symbol}`;
+            document.getElementById('timestamp').textContent = new Date(result.timestamp).toLocaleString('zh-TW');
+            
+            // 財表圖
+            drawChart(lastCloses, prices, currentPrice);
+            
+            document.getElementById('result').style.display = 'block';
+        }
+        
+        function drawChart(historical, forecast, current) {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            
+            if (chart) chart.destroy();
+            
+            // 準備數據鱼
+            const labels = [];
+            // 歷史 (H-10 ~ H)
+            for (let i = -historical.length; i <= 0; i++) {
+                if (i === 0) labels.push('H');
+                else labels.push(`H${i}`);
+            }
+            // 預測 (F+1 ~ F+10)
+            for (let i = 1; i <= forecast.length; i++) {
+                labels.push(`F+${i}`);
+            }
+            
+            // 整合價格敲料
+            const allPrices = [...historical, ...forecast];
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: '歷史價格',
+                            data: [...historical, null],
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 4,
+                            pointBackgroundColor: '#667eea'
+                        },
+                        {
+                            label: '預測價格',
+                            data: [historical[historical.length - 1], ...forecast],
+                            borderColor: '#764ba2',
+                            backgroundColor: 'rgba(118, 75, 162, 0.1)',
+                            borderWidth: 2,
+                            borderDash: [5, 5],
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 4,
+                            pointBackgroundColor: '#764ba2'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: {
+                                display: true,
+                                text: '價格 ($)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        function resetForm() {
+            document.getElementById('version').value = 'V6';
+            document.getElementById('symbol').value = '';
+            document.getElementById('timeframe').value = '1h';
+            document.getElementById('historicalPrices').value = '';
+            document.getElementById('result').style.display = 'none';
+            document.getElementById('version').dispatchEvent(new Event('change'));
+        }
+        
+        // 頁面載入時初始化幣種
+        window.addEventListener('load', () => {
+            document.getElementById('version').dispatchEvent(new Event('change'));
+        });
+    </script>
+</body>
+</html>
