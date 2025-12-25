@@ -20,6 +20,7 @@ Model Format: .keras (modern TensorFlow format)
 import os
 import sys
 import time
+import getpass
 from pathlib import Path
 from datetime import datetime
 
@@ -122,11 +123,22 @@ def validate_environment():
     token, source = get_token_from_sources()
     
     if not token:
-        print(f"  ✗ No HF token found!")
-        print(f"    Set HF_TOKEN environment variable or configure Colab Secrets")
-        return False
-    
-    print(f"  ✓ Token found (source: {source})")
+        print(f"  ⚠ No automated token found (Env/Secrets/File)")
+        print(f"  ➔ Please enter your HuggingFace Write Token below:")
+        try:
+            token = getpass.getpass("  HF Token > ")
+            if token and token.strip():
+                token = token.strip()
+                source = "manual input"
+                print(f"  ✓ Token received")
+            else:
+                print(f"  ✗ No token provided!")
+                return False
+        except Exception as e:
+            print(f"  ✗ Error reading input: {e}")
+            return False
+    else:
+        print(f"  ✓ Token found (source: {source})")
     
     # Check repository access
     print(f"\nHuggingFace Repository: {HF_REPO_ID}")
