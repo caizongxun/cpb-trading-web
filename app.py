@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 CPB Trading Web - V5 Model (HYBRID VERSION) - DEBUG VERSION
-带详细调试日志
+包含市场分析端点和价格校正
 """
 
 import asyncio
@@ -105,7 +105,7 @@ class PriceCorrector:
         historical_prices: List[float],
         confidence: float = 0.65
     ) -> Dict:
-        logger.debug(f"伊始价格修正: current={current_price}, predicted={predicted_price}")
+        logger.debug(f"开始价格修正: current={current_price}, predicted={predicted_price}")
         
         price_array = np.array(historical_prices)
         current = float(current_price)
@@ -120,20 +120,20 @@ class PriceCorrector:
         else:
             hist_volatility = 0.02
         
-        logger.debug(f"歴史波动: {hist_volatility*100:.4f}%")
+        logger.debug(f"历史波动: {hist_volatility*100:.4f}%")
         
         if abs(pct_change) > hist_volatility * 3:
-            logger.warning("预测超过3倍歴史波动，需要修正!")
+            logger.warning("预测超过3倍历史波动，需要修正!")
             if pct_change > 0:
                 correction_factor = self.correction_factors['aggressive_high']
-                logger.debug(f"预测偏高, 改正因子: {correction_factor}")
+                logger.debug(f"预测偏高, 修正因子: {correction_factor}")
             else:
                 correction_factor = self.correction_factors['aggressive_low']
-                logger.debug(f"预测偏低, 改正因子: {correction_factor}")
+                logger.debug(f"预测偏低, 修正因子: {correction_factor}")
             
             corrected_price = current * (1 + pct_change / correction_factor)
         else:
-            logger.debug("预测在合理范围内, 不稱修正")
+            logger.debug("预测在合理范围内, 不需修正")
             corrected_price = predicted
         
         max_change = hist_volatility * 5
@@ -141,7 +141,7 @@ class PriceCorrector:
         min_price = current * (1 - max_change)
         
         corrected_price = max(min_price, min(max_price, corrected_price))
-        logger.debug(f"修正後: {corrected_price}")
+        logger.debug(f"修正后: {corrected_price}")
         
         return {
             'original_predicted': predicted,
@@ -186,7 +186,7 @@ class MarketAnalyzer:
         trend_name = '多头上升' if direction == 'uptrend' else '空头下跌'
         description = f"{trend_name}趋势明显，{strength_desc}程度"
         
-        logger.debug(f"趨势结果: {direction}, 強度: {strength*100:.1f}%")
+        logger.debug(f"趋势结果: {direction}, 强度: {strength*100:.1f}%")
         
         return {
             'direction': direction,
@@ -197,7 +197,7 @@ class MarketAnalyzer:
         }
     
     def find_price_extremes(self, forecast_prices: List[float]) -> dict:
-        logger.debug("嫶找价格极值...")
+        logger.debug("寻找价格极值...")
         if not forecast_prices:
             return {}
         
@@ -226,10 +226,10 @@ class MarketAnalyzer:
         timeframe: str
     ) -> dict:
         logger.info(f"\n=== 市场分析 ===")
-        logger.info(f"符号: {symbol}, 時間框: {timeframe}")
-        logger.info(f"當前價: ${current_price:.2f}")
-        logger.info(f"旧歴史数据: {len(historical_prices)} 根")
-        logger.info(f"预測数据: {len(forecast_prices)} 根")
+        logger.info(f"符号: {symbol}, 时间框: {timeframe}")
+        logger.info(f"当前价: ${current_price:.2f}")
+        logger.info(f"历史数据: {len(historical_prices)} 根")
+        logger.info(f"预测数据: {len(forecast_prices)} 根")
         
         trend = self.analyze_trend(historical_prices)
         price_extremes = self.find_price_extremes(forecast_prices)
@@ -244,11 +244,11 @@ class MarketAnalyzer:
         entry_price = forecast_prices[best_entry - 1] if best_entry <= len(forecast_prices) else current_price
         
         if trend['direction'] == 'uptrend':
-            recommendation = f"多头信號 (第{best_entry}根)"
+            recommendation = f"多头信号 (第{best_entry}根)"
         else:
-            recommendation = f"空头信號 (第{best_entry}根)"
+            recommendation = f"空头信号 (第{best_entry}根)"
         
-        logger.info(f"建議: {recommendation}")
+        logger.info(f"建议: {recommendation}")
         logger.info("=" * 50)
         
         return {
@@ -286,7 +286,7 @@ class DataFetcher:
             interval = '1h' if timeframe == '1h' else '1d'
             period = '90d' if timeframe == '1d' else '30d'
             
-            logger.debug(f"xua转下辜: {period}, 間隕: {interval}")
+            logger.debug(f"周期: {period}, 间隔: {interval}")
             
             df = yf.download(
                 yf_symbol,
@@ -371,12 +371,12 @@ class PredictionEngine:
         trend = recent_avg - past_avg
         
         direction = 1 if trend > 0 else (-1 if trend < 0 else 0)
-        logger.debug(f"趨势方向: {direction}")
+        logger.debug(f"趋势方向: {direction}")
         
         volatility = np.std(np.array(closes[-10:]) / np.array(closes[-11:-1]) - 1)
         predicted_change = direction * volatility * 0.5
         predicted_price = current_price * (1 + predicted_change)
-        logger.debug(f"不修正预測: {predicted_price:.2f}")
+        logger.debug(f"未修正预测: {predicted_price:.2f}")
         
         correction = price_corrector.correct_predicted_price(
             current_price,
@@ -419,12 +419,12 @@ prediction_engine = PredictionEngine()
 # API 端点
 # ============================================================================
 
-logger.info("\n=" * 40 + "\n正在注册 API 端点\n" + "=" * 40)
+logger.info("\n" + "="*40 + "\n正在注册 API 端点\n" + "="*40)
 
 @app.post("/predict-v5")
 async def predict_v5(request: Dict) -> PredictionResponse:
     """V5 预测端点"""
-    logger.info(f"\n[预测] 請求: {request}")
+    logger.info(f"\n[预测] 请求: {request}")
     
     symbol = request.get('symbol', 'BTC')
     timeframe = request.get('timeframe', '1d')
@@ -501,9 +501,8 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
     """市场分析端点"""
     
     logger.info(f"\n[MARKET_ANALYSIS_START]")
-    logger.info(f"請求体: {request}")
-    logger.info(f不符: {request.symbol}")
-    logger.info(f"時間框架: {request.timeframe}")
+    logger.info(f"符号: {request.symbol}")
+    logger.info(f"时间框架: {request.timeframe}")
     logger.info(f"Binance: {request.use_binance}")
     
     try:
@@ -537,9 +536,9 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
         forecast_prices = [k['close'] for k in forecast_klines]
         current_price = historical_klines[-1]['close']
         
-        logger.debug(f"歴史价: {len(historical_prices)}, 预測价: {len(forecast_prices)}, 當前: ${current_price:.2f}")
+        logger.debug(f"历史价: {len(historical_prices)}, 预测价: {len(forecast_prices)}, 当前: ${current_price:.2f}")
         
-        logger.debug("執行市场分析...")
+        logger.debug("执行市场分析...")
         analysis = market_analyzer.analyze(
             current_price=current_price,
             historical_prices=historical_prices,
@@ -547,7 +546,7 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
             symbol=request.symbol,
             timeframe=request.timeframe
         )
-        logger.info(f"[市场分析] 成功")
+        logger.info("[市场分析] 成功")
         
         response = MarketAnalysisResponse(
             symbol=request.symbol,
@@ -559,7 +558,7 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
             recommendation=analysis['recommendation']
         )
         
-        logger.info(f"[MARKET_ANALYSIS_END] 成功")
+        logger.info("[MARKET_ANALYSIS_END] 成功")
         return response
     
     except Exception as e:
@@ -569,7 +568,7 @@ async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisRespo
 @app.get("/")
 async def root():
     """根端点"""
-    logger.debug("根端点請求")
+    logger.debug("根端点请求")
     return {
         "message": "CPB Trading V5 HYBRID DEBUG",
         "version": "5.0.0",
@@ -578,6 +577,8 @@ async def root():
             "/market-analysis": "市场趋势分析和最佳入场点"
         }
     }
+
+logger.info("所有 API 端点已注册")
 
 if __name__ == "__main__":
     import uvicorn
