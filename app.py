@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 CPB Trading Web - V2 Model Inference
-實時拶取幣種資料 + V2 模型予渫 + 開單點位推譹
+實時拉取幣種資料 + V2 模型予測 + 開單點位推護
 """
 
 from fastapi import FastAPI, HTTPException
@@ -18,6 +18,7 @@ import logging
 import math
 import numpy as np
 import tensorflow as tf
+from market_analysis import MarketAnalyzer, MarketAnalysisResult
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO)
@@ -65,7 +66,12 @@ print(f"[✓] 幣種清单: {SUPPORTED_COINS}\n")
 class PredictionRequest(BaseModel):
     coin: str  # 例: BTCUSDT
     lookback_periods: int = 20  # 過去多少根K棒作為輸入
-    prediction_horizon: int = 5  # 預渫後多少根K棒
+    prediction_horizon: int = 5  # 預測例更多少根K棒
+
+class MarketAnalysisRequest(BaseModel):
+    symbol: str  # 幣種 (e.g., 'BTC', 'ETH')
+    timeframe: str = '1d'  # 時間框架 ('1h', '1d')
+    use_binance: bool = False
 
 class KlineData(BaseModel):
     time: str
@@ -77,25 +83,34 @@ class KlineData(BaseModel):
 
 class VolatilityData(BaseModel):
     current: float  # 當前波動率 (%) - 最後一根K線的價格變化
-    predicted_3: float  # 3根K棒後預渫波動率 (%) - 預渫價格變化
-    predicted_5: float  # 5根K棒後預渫波動率 (%) - 預渫價格變化
-    volatility_level: str  # "低" / "中" / "高"
-    atr_14: float  # 14根K棒平均真實幅度
+    predicted_3: float  # 3根K棒侌預測波動率 (%) - 預測價格變化
+    predicted_5: float  # 5根K棒侌預測波動率 (%) - 預測價格變化
+    level: str  # "低" / "中" / "高"
+    atr_14: float  # 14根K棒平均真實恆度
 
 class PredictionResult(BaseModel):
     coin: str
     timestamp: str
     current_price: float
-    predicted_price_3: float  # 3根K棒後預渫價格
-    predicted_price_5: float  # 5根K棒後預渫價格
+    predicted_price_3: float  # 3根K棒侌預測價格
+    predicted_price_5: float  # 5根K棒侌預測價格
     recommendation: str  # BUY / SELL / HOLD
     entry_price: float  # 建議開單價
     stop_loss: float  # 止損點
-    take_profit: float  # 止盆點
+    take_profit: float  # 止盈點
     confidence: float  # 信心指數 (0-1)
     volatility: VolatilityData  # 波動率資料
-    klines: List[KlineData]  # 用於預渫K棒數據
+    klines: List[KlineData]  # 用于預測K棒數據
     model_version: str  # 模型版本
+
+class MarketAnalysisResponse(BaseModel):
+    symbol: str
+    timeframe: str
+    trend: Dict  # TrendAnalysis serialized
+    best_entry_bar: int
+    price_extremes: Dict  # PriceExtremes serialized
+    forecast_prices: List[float]
+    recommendation: str
 
 # ============================================================================
 # V2 模型管理
@@ -137,18 +152,18 @@ class ModelManagerV2:
             return self.models[coin]
     
     def predict(self, coin: str, klines: List[Dict]) -> Dict:
-        """執行預渫 (V2 模型 輸入: [price, volatility])
+        """執行預測 (V2 模型 輸入: [price, volatility])
         
         Args:
             coin: 幣種
-            klines: K棒數據列表
+            klines: K棒數據清単
         
         Returns:
             prediction dict
         """
         model = self.load_model(coin)
         
-        # 使用 V2 模型進行予渫
+        # 使用 V2 模型骞予測
         if model.get('demo'):
             return self._forward_simple_model(klines)
         else:
@@ -171,21 +186,21 @@ class ModelManagerV2:
             if close_range == 0:
                 close_range = 1
             
-            # 扰兄 [seq_len, 4]
+            # 揰技 [seq_len, 4]
             ohlc = np.column_stack([opens, highs, lows, closes])
             ohlc_norm = (ohlc - close_min) / close_range
             
             # 添加批次維度
             X = ohlc_norm.reshape(1, -1, 4).astype(np.float32)
             
-            # 預渫
+            # 預測
             prediction = model.predict(X, verbose=0)
             
-            # V2 模型輸倖: [price, volatility]
+            # V2 模型輸出: [price, volatility]
             price_change_pct = float(prediction[0, 0]) if len(prediction[0]) > 0 else 0.5
             volatility_pred = float(prediction[0, 1]) if len(prediction[0]) > 1 else 1.2
             
-            # 逧的漂水模式采用简单部分
+            # 逾的潢水模式采用粗矊部分
             last_kline = klines[-1]
             volatility_current = abs((last_kline['close'] - last_kline['open']) / last_kline['open']) * 100
             
@@ -199,11 +214,11 @@ class ModelManagerV2:
                 true_ranges.append(tr)
             atr_14 = np.mean(true_ranges[-14:]) if true_ranges else 0
             
-            # 預渫價格
-            pred_3 = current_close * (1 + price_change_pct / 100 * 0.5)  # 開子梁
+            # 預測價格
+            pred_3 = current_close * (1 + price_change_pct / 100 * 0.5)  # 開子樜
             pred_5 = current_close * (1 + price_change_pct / 100 * 0.8)  # 加強
             
-            # 預渫波動率
+            # 預測波動率
             volatility_pred_3 = abs((pred_3 - current_close) / current_close) * 100
             volatility_pred_5 = abs((pred_5 - current_close) / current_close) * 100
             
@@ -236,7 +251,7 @@ class ModelManagerV2:
             return self._forward_simple_model(klines)
     
     def _forward_simple_model(self, klines: List[Dict]) -> Dict:
-        """簡便的推理邏輯（不依賴 PyTorch/NumPy）"""
+        """粗便的推理邏輯（不依賴 PyTorch/NumPy）"""
         # 提取收盤價
         closes = [k['close'] for k in klines]
         highs = [k['high'] for k in klines]
@@ -248,7 +263,7 @@ class ModelManagerV2:
         last_kline = klines[-1]
         volatility_current = ((last_kline['close'] - last_kline['open']) / last_kline['open']) * 100
         
-        # 計算平均真實幅度 (ATR)
+        # 計算平均真實恆度 (ATR)
         true_ranges = []
         for i in range(len(klines)):
             high = highs[i]
@@ -270,17 +285,17 @@ class ModelManagerV2:
         trend = recent_avg - past_avg
         
         if trend > 0:
-            direction = 1  # 看漫
+            direction = 1  # 看漲
         elif trend < 0:
-            direction = -1  # 看責
+            direction = -1  # 看空
         else:
             direction = 0  # 持平
         
-        # 預渫價格
+        # 預測價格
         pred_3 = current_close * (1 + 0.02 * direction)  # ±2%
         pred_5 = current_close * (1 + 0.03 * direction)  # ±3%
         
-        # 預渫波動率
+        # 預測波動率
         volatility_pred_3 = ((pred_3 - current_close) / current_close) * 100
         volatility_pred_5 = ((pred_5 - current_close) / current_close) * 100
         
@@ -339,7 +354,7 @@ class DataFetcher:
             
             logger.info(f"Fetching {limit} {timeframe} klines for {coin}")
             
-            # 非同步調用（防止阻塋）
+            # 非同步訂用（防止阻婫）
             loop = asyncio.get_event_loop()
             klines = await loop.run_in_executor(
                 None,
@@ -370,7 +385,7 @@ class DataFetcher:
             return self._generate_demo_klines(limit)
     
     def _generate_demo_klines(self, limit: int = 20) -> List[Dict]:
-        """生成演示 K 棒數據"""
+        """生成漠例 K 棒數據"""
         import time
         import random
         
@@ -399,6 +414,7 @@ class DataFetcher:
         return klines
 
 data_fetcher = DataFetcher()
+market_analyzer = MarketAnalyzer()
 
 # ============================================================================
 # API 端點
@@ -415,13 +431,14 @@ async def root():
             "/coins": "List supported coins (20)",
             "/predict": "Get prediction for a coin",
             "/predict-batch": "Batch predict multiple coins",
+            "/market-analysis": "Analyze market trend and find best entry point",
             "/health": "Health check"
         }
     }
 
 @app.get("/coins")
 async def get_coins():
-    """列出所有支援的幣種"""
+    """清底所有支援的幣種"""
     return {
         "coins": SUPPORTED_COINS,
         "total": len(SUPPORTED_COINS),
@@ -430,7 +447,7 @@ async def get_coins():
 
 @app.post("/predict")
 async def predict(request: PredictionRequest) -> PredictionResult:
-    """預渫交易信號和開單點位 (V2 模型)"""
+    """預測交易信號和開單點位 (V2 模型)"""
     
     # 驗證幣種
     if request.coin not in SUPPORTED_COINS:
@@ -449,7 +466,7 @@ async def predict(request: PredictionRequest) -> PredictionResult:
     current_price = klines[-1]['close']
     logger.info(f"{request.coin} current price: {current_price}")
     
-    # 2. 執行 V2 模型預渫
+    # 2. 執行 V2 模型預測
     pred_result = model_manager.predict(request.coin, klines)
     
     # 3. 計算開單點位
@@ -463,13 +480,13 @@ async def predict(request: PredictionRequest) -> PredictionResult:
     volatility_level = pred_result['volatility_level']
     atr_14 = pred_result['atr_14']
     
-    # 推譹點位
-    if direction > 0:  # 看漫
+    # 推謀點位
+    if direction > 0:  # 看漲
         recommendation = "BUY"
         entry_price = current_price
         stop_loss = round(current_price * 0.98, 2)  # 止損 2%
         take_profit = round(price_5 * 1.02, 2) if price_5 > current_price else round(price_5, 2)
-    elif direction < 0:  # 看責
+    elif direction < 0:  # 看空
         recommendation = "SELL"
         entry_price = current_price
         stop_loss = round(current_price * 1.02, 2)  # 止損 2%
@@ -496,7 +513,7 @@ async def predict(request: PredictionRequest) -> PredictionResult:
             current=round(volatility_current, 2),
             predicted_3=round(volatility_pred_3, 2),
             predicted_5=round(volatility_pred_5, 2),
-            volatility_level=volatility_level,
+            level=volatility_level,
             atr_14=atr_14
         ),
         klines=[
@@ -517,7 +534,7 @@ async def predict(request: PredictionRequest) -> PredictionResult:
 
 @app.post("/predict-batch")
 async def predict_batch(coins: List[str]) -> List[PredictionResult]:
-    """批量預渫多個幣種"""
+    """批量預測多個幣種"""
     results = []
     for coin in coins:
         try:
@@ -527,6 +544,75 @@ async def predict_batch(coins: List[str]) -> List[PredictionResult]:
             logger.error(f"Failed to predict {coin}: {e}")
             continue
     return results
+
+@app.post("/market-analysis")
+async def market_analysis(request: MarketAnalysisRequest) -> MarketAnalysisResponse:
+    """市場分析 - 趨勢判斷和最佳入場點計算"""
+    
+    try:
+        # 將幣種名灊轉換成 Binance 格式
+        symbol_map = {
+            'BTC': 'BTCUSDT', 'ETH': 'ETHUSDT', 'BNB': 'BNBUSDT',
+            'SOL': 'SOLUSDT', 'XRP': 'XRPUSDT', 'ADA': 'ADAUSDT',
+            'DOGE': 'DOGEUSDT', 'AVAX': 'AVAXUSDT', 'LTC': 'LITUSDT',
+            'DOT': 'DOTUSDT', 'UNI': 'UNIUSDT', 'LINK': 'LINKUSDT',
+            'XLM': 'XLMUSDT', 'ATOM': 'ATOMUSDT'
+        }
+        
+        binance_symbol = symbol_map.get(request.symbol, request.symbol + 'USDT')
+        
+        # 尋找最適時間框架
+        timeframe = '1d' if request.timeframe == '1d' else '1h'
+        
+        # 1. 獲取擤圭 K線數據矩陣(20根歷史) + 上來10根預測
+        all_klines = await data_fetcher.fetch_klines(binance_symbol, timeframe, limit=30)
+        
+        # 分成歷史數據和予測數據
+        historical_klines = all_klines[:20]
+        forecast_klines = all_klines[20:30]
+        
+        # 提取價格慰新恰寶 
+        historical_prices = [k['close'] for k in historical_klines]
+        forecast_prices = [k['close'] for k in forecast_klines]
+        current_price = historical_klines[-1]['close']
+        
+        # 2. 執行市場分析
+        analysis_result = market_analyzer.analyze(
+            current_price=current_price,
+            historical_prices=historical_prices,
+            forecast_prices=forecast_prices,
+            symbol=request.symbol,
+            timeframe=request.timeframe
+        )
+        
+        # 3. 構建回應
+        response = MarketAnalysisResponse(
+            symbol=request.symbol,
+            timeframe=request.timeframe,
+            trend={
+                'direction': analysis_result.trend.direction,
+                'strength': round(analysis_result.trend.strength, 2),
+                'consecutive_bars': analysis_result.trend.consecutive_bars,
+                'average_return': round(analysis_result.trend.average_return * 100, 2),
+                'description': analysis_result.trend.description
+            },
+            best_entry_bar=analysis_result.best_entry_bar,
+            price_extremes={
+                'lowest_price': analysis_result.price_extremes.lowest_price,
+                'lowest_bar': analysis_result.price_extremes.lowest_bar,
+                'highest_price': analysis_result.price_extremes.highest_price,
+                'highest_bar': analysis_result.price_extremes.highest_bar,
+                'potential_profit': round(analysis_result.price_extremes.potential_profit * 100, 2)
+            },
+            forecast_prices=forecast_prices,
+            recommendation=analysis_result.recommendation
+        )
+        
+        return response
+    
+    except Exception as e:
+        logger.error(f"Market analysis failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
 async def health_check():
