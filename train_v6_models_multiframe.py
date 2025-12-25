@@ -9,6 +9,7 @@ Supported:
 - Timeframes: 1d (daily), 1h (hourly), 15m (15-min)
 - Output: OHLC (Open, High, Low, Close) for next 10 bars
 - Inference: Direct to Hugging Face models_v6 directory
+- Format: Modern .keras (replaces deprecated .h5)
 
 Usage in Colab:
     !pip install yfinance pandas numpy tensorflow scikit-learn huggingface-hub -q
@@ -91,6 +92,7 @@ print("="*80)
 print(f"Coins: {len(COINS)}")
 print(f"Timeframes: {list(TIMEFRAMES.keys())}")
 print(f"Total combinations: {len(COINS) * len(TIMEFRAMES)}")
+print(f"Model Format: .keras (modern TensorFlow format)")
 print("="*80 + "\n")
 
 # ============================================================================
@@ -278,7 +280,41 @@ class Evaluator:
         return metrics
 
 # ============================================================================
-# HF UPLOAD
+# MODEL SAVING (.keras format)
+# ============================================================================
+
+class ModelSaver:
+    @staticmethod
+    def save_local(model, symbol: str, timeframe: str, metrics: dict, output_dir: str = 'models_v6'):
+        """
+        Save model in modern .keras format (replaces .h5)
+        
+        Args:
+            model: Trained Keras model
+            symbol: Coin symbol (e.g., 'BTC')
+            timeframe: Timeframe (e.g., '1d')
+            metrics: Model metrics dictionary
+            output_dir: Output directory
+        """
+        Path(output_dir).mkdir(exist_ok=True)
+        
+        # Save model in .keras format
+        model_filename = f"{symbol}_{timeframe}.keras"
+        model_path = os.path.join(output_dir, model_filename)
+        model.save(model_path, save_format='keras')
+        print(f"  [Save] {model_filename} (format: .keras)")
+        
+        # Save metrics as JSON
+        metrics_filename = f"{symbol}_{timeframe}_metrics.json"
+        metrics_path = os.path.join(output_dir, metrics_filename)
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f, indent=2)
+        print(f"  [Save] {metrics_filename}")
+        
+        return model_path, metrics_path
+
+# ============================================================================
+# HF UPLOAD (Batch Mode)
 # ============================================================================
 
 class HFUploader:
@@ -286,48 +322,13 @@ class HFUploader:
         self.token = token
         self.repo_id = repo_id
     
-    def upload_model(self, model, symbol: str, timeframe: str, metrics: dict):
-        try:
-            from huggingface_hub import HfApi, Repository
-            
-            api = HfApi()
-            
-            # Model path
-            model_name = f"{symbol}_{timeframe}.h5"
-            metrics_name = f"{symbol}_{timeframe}_metrics.json"
-            
-            # Save locally first
-            model.save(model_name)
-            with open(metrics_name, 'w') as f:
-                json.dump(metrics, f, indent=2)
-            
-            # Upload to HF (models_v6 directory)
-            print(f"  [HF Upload] Uploading {model_name}...", end=' ')
-            api.upload_file(
-                path_or_fileobj=model_name,
-                path_in_repo=f"models_v6/{model_name}",
-                repo_id=self.repo_id,
-                token=self.token,
-                repo_type="dataset",
-            )
-            print("OK")
-            
-            print(f"  [HF Upload] Uploading {metrics_name}...", end=' ')
-            api.upload_file(
-                path_or_fileobj=metrics_name,
-                path_in_repo=f"models_v6/{metrics_name}",
-                repo_id=self.repo_id,
-                token=self.token,
-                repo_type="dataset",
-            )
-            print("OK")
-            
-            # Cleanup
-            os.remove(model_name)
-            os.remove(metrics_name)
-        
-        except Exception as e:
-            print(f"ERROR: {e}")
+    def upload_after_training(self, symbol: str, timeframe: str):
+        """
+        Models are uploaded via batch upload script (upload_models_v6_batch.py)
+        This method is for reference only.
+        """
+        print(f"  [Note] Use 'python upload_models_v6_batch.py' to batch upload all models")
+        print(f"  [Note] HF Repository: https://huggingface.co/datasets/{self.repo_id}")
 
 # ============================================================================
 # MAIN TRAINING LOOP
@@ -341,12 +342,13 @@ def main():
             HF_TOKEN = userdata.get('HF_TOKEN')
             print(f"HF Token loaded from Colab Secrets")
         except:
-            print("HF Token not found in Colab Secrets. Models will be saved locally only.")
+            print("HF Token not found in Colab Secrets. Models will be saved locally.")
             HF_TOKEN = None
     
     fetcher = DataFetcher()
     trainer = Trainer(MODEL_PARAMS)
     evaluator = Evaluator()
+    saver = ModelSaver()
     uploader = HFUploader(HF_TOKEN, HF_REPO_ID) if HF_TOKEN else None
     
     results_summary = {}
@@ -399,16 +401,9 @@ def main():
                 for col, m in metrics.items():
                     print(f"    {col}: MAE={m['MAE']:.4f}, RMSE={m['RMSE']:.4f}, MAPE={m['MAPE']:.2f}%")
                 
-                # 6. Save & Upload
-                if uploader:
-                    uploader.upload_model(model, coin_code, timeframe, metrics)
-                else:
-                    print(f"  [Save] Saving locally...")
-                    Path(f"models_v6").mkdir(exist_ok=True)
-                    model.save(f"models_v6/{coin_code}_{timeframe}.h5")
-                    with open(f"models_v6/{coin_code}_{timeframe}_metrics.json", 'w') as f:
-                        json.dump(metrics, f, indent=2)
-                    print(f"  [Save] OK")
+                # 6. Save model (.keras format)
+                print(f"  [Save]")
+                saver.save_local(model, coin_code, timeframe, metrics)
                 
                 results_summary[f"{coin_code}_{timeframe}"] = "SUCCESS"
                 
@@ -433,9 +428,10 @@ def main():
         print(f"  {symbol} {key}: {status}")
     
     print("\n" + "="*80)
-    print(f"Models saved to: models_v6/")
-    if uploader:
-        print(f"HF Repository: https://huggingface.co/datasets/{HF_REPO_ID}")
+    print(f"Models saved to: models_v6/ (.keras format)")
+    print(f"\nNext Step: Batch Upload All Models")
+    print(f"  Command: python upload_models_v6_batch.py")
+    print(f"  This will upload all models to HF in one batch operation")
     print("="*80 + "\n")
 
 if __name__ == "__main__":
