@@ -383,6 +383,11 @@
             display: block;
         }
 
+        .kline-bar.best-entry {
+            border: 3px solid #FFD700;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.6);
+        }
+
         .loading {
             text-align: center;
             padding: 2rem;
@@ -421,6 +426,71 @@
             color: var(--success-color);
             border: 1px solid var(--success-color);
         }
+
+        .trend-indicator {
+            display: inline-block;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin: 0.5rem 0;
+        }
+
+        .trend-indicator.uptrend {
+            background-color: rgba(76, 175, 80, 0.2);
+            color: var(--success-color);
+        }
+
+        .trend-indicator.downtrend {
+            background-color: rgba(244, 67, 54, 0.2);
+            color: var(--error-color);
+        }
+
+        .analysis-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+
+        .analysis-item {
+            background-color: var(--bg-primary);
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .analysis-item.highlight {
+            border-color: #FFD700;
+            background-color: rgba(255, 215, 0, 0.05);
+        }
+
+        .analysis-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .analysis-value {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: var(--text-primary);
+            margin: 0.5rem 0;
+        }
+
+        .analysis-value.best {
+            color: #FFD700;
+            font-size: 2rem;
+        }
+
+        .analysis-desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
     </style>
 </head>
 <body>
@@ -434,7 +504,7 @@
 
     <div class="sidebar" id="sidebar">
         <div class="sidebar-item active" onclick="switchPage('prediction')">📊 預測</div>
-        <div class="sidebar-item" onclick="switchPage('analysis')">📈 分析</div>
+        <div class="sidebar-item" onclick="switchPage('analysis')">📈 市場分析</div>
         <div class="sidebar-item" onclick="switchPage('settings')">⚙️ 設定</div>
     </div>
 
@@ -602,8 +672,123 @@
 
         <div id="analysis" class="page">
             <div class="card">
-                <div class="card-title">📈 市場分析</div>
-                <p style="color: var(--text-secondary);">分析功能即將推出...</p>
+                <div class="card-title">📈 市場分析 - 最佳開單點位</div>
+
+                <div class="form-group">
+                    <div class="form-label">📊 數據源選擇</div>
+                    <div class="tag-group">
+                        <div class="tag active" onclick="setAnalysisDataSource('yfinance', this)">📊 yfinance</div>
+                        <div class="tag" onclick="setAnalysisDataSource('binance', this)">🔗 Binance</div>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">幣種</label>
+                        <select id="analysis-symbol" class="form-control">
+                            <option value="BTC">🪙 BTC - 比特幣</option>
+                            <option value="ETH">🪙 ETH - 以太坊</option>
+                            <option value="BNB">🪙 BNB - 幣安幣</option>
+                            <option value="SOL">🪙 SOL - 索拉納</option>
+                            <option value="XRP">🪙 XRP - 瑞波幣</option>
+                            <option value="ADA">🪙 ADA - 卡爾達諾</option>
+                            <option value="DOGE">🪙 DOGE - 狗狗幣</option>
+                            <option value="AVAX">🪙 AVAX - 雪崩幣</option>
+                            <option value="LTC">🪙 LTC - 萊特幣</option>
+                            <option value="DOT">🪙 DOT - 波卡</option>
+                            <option value="UNI">🪙 UNI - Uniswap</option>
+                            <option value="LINK">🪙 LINK - Chainlink</option>
+                            <option value="XLM">🪙 XLM - Stellar</option>
+                            <option value="ATOM">🪙 ATOM - Cosmos</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">時間框架</label>
+                        <select id="analysis-timeframe" class="form-control">
+                            <option value="1d">📅 日線 (1D)</option>
+                            <option value="1h">⏰ 小時線 (1H)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="btn btn-primary" onclick="performMarketAnalysis()">🔍 執行分析</button>
+                <div id="analysis-loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>正在分析市場趨勢與最佳入場點...</p>
+                </div>
+            </div>
+
+            <div id="analysis-results" style="display: none;">
+                <div id="analysis-alert-container"></div>
+
+                <div class="card">
+                    <div class="card-title">趨勢判斷</div>
+                    <div class="analysis-grid">
+                        <div class="analysis-item">
+                            <div class="analysis-label">當前趨勢</div>
+                            <div id="trend-direction" class="trend-indicator uptrend">多頭</div>
+                            <div class="analysis-desc" id="trend-desc">上升趨勢明顯</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-label">趨勢強度</div>
+                            <div class="analysis-value" id="trend-strength">75%</div>
+                            <div class="analysis-desc">相當強勢</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-label">連續上漲根數</div>
+                            <div class="analysis-value" id="consecutive-up">5根</div>
+                            <div class="analysis-desc">最近K線表現</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-label">平均漲幅</div>
+                            <div class="analysis-value positive" id="avg-return">+2.35%</div>
+                            <div class="analysis-desc">每根漲幅</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">未來10根K棒分析</div>
+                    <div class="kline-forecast">
+                        <div class="kline-forecast-title">預測走勢與最佳入場點</div>
+                        <div class="kline-forecast-chart" id="analysis-forecast-chart"></div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">最佳開單點位</div>
+                    <div class="analysis-grid">
+                        <div class="analysis-item highlight">
+                            <div class="analysis-label">最優入場點</div>
+                            <div class="analysis-value best" id="best-entry">+3</div>
+                            <div class="analysis-desc">第3根K棒時入場</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-label">最低點位</div>
+                            <div class="analysis-value" id="lowest-price">$42,500</div>
+                            <div class="analysis-desc" id="lowest-bar">第5根K棒出現</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-label">目標高點</div>
+                            <div class="analysis-value positive" id="highest-price">$44,800</div>
+                            <div class="analysis-desc" id="highest-bar">第9根K棒出現</div>
+                        </div>
+                        <div class="analysis-item">
+                            <div class="analysis-label">潛在收益</div>
+                            <div class="analysis-value positive" id="potential-profit">+5.4%</div>
+                            <div class="analysis-desc">從最低到最高點</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">詳細建議</div>
+                    <div style="background-color: var(--bg-primary); padding: 1rem; border-radius: 6px; border-left: 4px solid var(--accent-color);">
+                        <p id="analysis-recommendation" style="color: var(--text-primary); line-height: 1.6; margin: 0;">
+                            根據趨勢分析，目前處於強勢多頭...
+                        </p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -629,6 +814,7 @@
     <script>
         const API_BASE = localStorage.getItem('api_endpoint') || 'http://localhost:8001';
         let currentDataSource = localStorage.getItem('dataSource') || 'yfinance';
+        let currentAnalysisDataSource = localStorage.getItem('analysisDataSource') || 'yfinance';
 
         // 智能小數位數格式化函數
         function formatPrice(price) {
@@ -636,32 +822,25 @@
             
             const priceStr = price.toString();
             
-            // 如果是很小的數字 (例如 0.00004500)
             if (price < 0.0001) {
-                // 找到第一個非零數字的位置
                 const match = priceStr.match(/^0\.(0+)/);
                 if (match) {
                     const zeros = match[1].length;
-                    // 保留首個非零數字之後的4位有效數字
                     return price.toFixed(zeros + 4).replace(/0+$/, '');
                 }
             }
             
-            // 如果是整數或大於1
             if (price >= 1) {
                 const decimal = priceStr.split('.')[1];
                 if (!decimal) return price.toFixed(2);
                 
-                // 找到有效小數位 (去掉尾部的0)
                 let validDecimals = decimal.replace(/0+$/, '');
                 if (validDecimals.length === 0) return Math.floor(price).toString();
                 
-                // 最多保留10位小數
                 validDecimals = validDecimals.substring(0, 10);
                 return price.toString().split('.')[0] + '.' + validDecimals;
             }
             
-            // 0.001 ~ 0.9999 之間的數字
             const decimal = priceStr.split('.')[1];
             if (!decimal) return '0.00';
             
@@ -729,6 +908,18 @@
             document.getElementById('source-info').textContent = infoMap[source];
         }
 
+        // 市場分析數據源選擇
+        function setAnalysisDataSource(source, element) {
+            currentAnalysisDataSource = source;
+            localStorage.setItem('analysisDataSource', source);
+            
+            const groups = document.querySelectorAll('.tag-group');
+            if (groups[1]) {
+                groups[1].querySelectorAll('.tag').forEach(t => t.classList.remove('active'));
+                element.classList.add('active');
+            }
+        }
+
         // 獲取預測
         async function getPrediction() {
             const symbol = document.getElementById('symbol').value;
@@ -761,6 +952,131 @@
             } finally {
                 document.getElementById('loading').style.display = 'none';
             }
+        }
+
+        // 執行市場分析
+        async function performMarketAnalysis() {
+            const symbol = document.getElementById('analysis-symbol').value;
+            const timeframe = document.getElementById('analysis-timeframe').value;
+            
+            document.getElementById('analysis-loading').style.display = 'block';
+            document.getElementById('analysis-results').style.display = 'none';
+            document.getElementById('analysis-alert-container').innerHTML = '';
+
+            try {
+                const response = await fetch(`${API_BASE}/market-analysis`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        symbol: symbol,
+                        timeframe: timeframe,
+                        use_binance: currentAnalysisDataSource === 'binance'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayAnalysisResults(data);
+                } else {
+                    showAnalysisAlert('error', data.detail || '市場分析失敗');
+                }
+            } catch (error) {
+                showAnalysisAlert('error', '連接錯誤：' + error.message);
+            } finally {
+                document.getElementById('analysis-loading').style.display = 'none';
+            }
+        }
+
+        // 顯示分析結果
+        function displayAnalysisResults(data) {
+            // 趨勢判斷
+            const trendElement = document.getElementById('trend-direction');
+            const trendClass = data.trend.direction === 'uptrend' ? 'uptrend' : 'downtrend';
+            const trendText = data.trend.direction === 'uptrend' ? '多頭' : '空頭';
+            trendElement.textContent = trendText;
+            trendElement.className = `trend-indicator ${trendClass}`;
+            
+            document.getElementById('trend-desc').textContent = data.trend.description;
+            document.getElementById('trend-strength').textContent = `${(data.trend.strength * 100).toFixed(0)}%`;
+            document.getElementById('consecutive-up').textContent = `${data.trend.consecutive_bars}根`;
+            
+            const returnValue = document.getElementById('avg-return');
+            const avgReturn = data.trend.average_return * 100;
+            returnValue.textContent = `${avgReturn > 0 ? '+' : ''}${avgReturn.toFixed(2)}%`;
+            returnValue.className = avgReturn > 0 ? 'analysis-value positive' : 'analysis-value negative';
+
+            // 最佳入場點
+            document.getElementById('best-entry').textContent = `+${data.best_entry_bar}`;
+            document.getElementById('lowest-price').textContent = `$${formatPrice(data.price_extremes.lowest_price)}`;
+            document.getElementById('lowest-bar').textContent = `第${data.price_extremes.lowest_bar}根K棒出現`;
+            document.getElementById('highest-price').textContent = `$${formatPrice(data.price_extremes.highest_price)}`;
+            document.getElementById('highest-bar').textContent = `第${data.price_extremes.highest_bar}根K棒出現`;
+            
+            const profitValue = document.getElementById('potential-profit');
+            const profit = data.price_extremes.potential_profit * 100;
+            profitValue.textContent = `${profit > 0 ? '+' : ''}${profit.toFixed(2)}%`;
+            profitValue.className = profit > 0 ? 'analysis-value positive' : 'analysis-value negative';
+
+            // 詳細建議
+            document.getElementById('analysis-recommendation').textContent = data.recommendation;
+
+            // 繪製預測圖表
+            drawAnalysisForecastChart(data);
+
+            document.getElementById('analysis-results').style.display = 'block';
+            showAnalysisAlert('success', '✅ 市場分析完成！');
+        }
+
+        // 繪製分析預測圖表
+        function drawAnalysisForecastChart(data) {
+            const chart = document.getElementById('analysis-forecast-chart');
+            chart.innerHTML = '';
+            
+            const prices = data.forecast_prices;
+            const minPrice = Math.min(...prices);
+            const maxPrice = Math.max(...prices);
+            const priceSpan = maxPrice - minPrice || 1;
+            const bestBar = data.best_entry_bar;
+            const lowestBar = data.price_extremes.lowest_bar;
+            const highestBar = data.price_extremes.highest_bar;
+
+            prices.forEach((price, index) => {
+                const height = ((price - minPrice) / priceSpan) * 200;
+                const isPositive = index > 0 && price >= prices[index - 1];
+                const barNum = index + 1;
+                
+                const item = document.createElement('div');
+                item.className = 'kline-item';
+                
+                const bar = document.createElement('div');
+                bar.className = `kline-bar ${isPositive ? 'positive' : 'negative'}`;
+                bar.style.height = Math.max(20, height) + 'px';
+
+                // 標記最佳入場點
+                if (barNum === bestBar) {
+                    bar.classList.add('best-entry');
+                }
+
+                const tooltip = document.createElement('div');
+                tooltip.className = 'kline-tooltip';
+                let tooltipText = `$${formatPrice(price)}`;
+                if (barNum === bestBar) tooltipText += ' 最優入場';
+                if (barNum === lowestBar) tooltipText += ' 最低點';
+                if (barNum === highestBar) tooltipText += ' 最高點';
+                tooltip.textContent = tooltipText;
+                bar.appendChild(tooltip);
+                
+                const label = document.createElement('div');
+                label.className = 'kline-label';
+                let labelText = `+${barNum}`;
+                if (barNum === bestBar) labelText += ' ⭐';
+                label.textContent = labelText;
+                
+                item.appendChild(bar);
+                item.appendChild(label);
+                chart.appendChild(item);
+            });
         }
 
         // 顯示結果
@@ -870,6 +1186,15 @@
         // 顯示提示
         function showAlert(type, message) {
             const container = document.getElementById('alert-container');
+            container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+
+        // 顯示分析提示
+        function showAnalysisAlert(type, message) {
+            const container = document.getElementById('analysis-alert-container');
             container.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
             setTimeout(() => {
                 container.innerHTML = '';
