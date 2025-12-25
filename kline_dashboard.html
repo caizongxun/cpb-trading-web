@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CPB Trading V5 - K線分析儀表板</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+            color: #e5e7eb;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #06b6d4, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            font-size: 0.95em;
+            color: #9ca3af;
+        }
+
+        .controls {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(100, 200, 255, 0.2);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+        }
+
+        .control-group {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        label {
+            font-weight: 600;
+            color: #cbd5e1;
+            font-size: 0.95em;
+        }
+
+        select {
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            background: rgba(15, 23, 42, 0.8);
+            color: #e5e7eb;
+            font-size: 0.95em;
+            cursor: pointer;
+            min-width: 150px;
+            transition: all 0.3s ease;
+        }
+
+        select:hover {
+            border-color: rgba(100, 200, 255, 0.5);
+            background: rgba(15, 23, 42, 1);
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #06b6d4;
+            box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
+        }
+
+        button {
+            padding: 10px 25px;
+            border-radius: 8px;
+            border: none;
+            background: linear-gradient(135deg, #06b6d4, #0891b2);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 0.95em;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(6, 182, 212, 0.3);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 30px;
+            background: rgba(30, 41, 59, 0.8);
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 3px solid rgba(6, 182, 212, 0.2);
+            border-top-color: #06b6d4;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .chart-container {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(100, 200, 255, 0.2);
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 30px;
+            backdrop-filter: blur(10px);
+            position: relative;
+            height: 500px;
+        }
+
+        .chart-title {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #cbd5e1;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        .info-card {
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(100, 200, 255, 0.15);
+            border-radius: 8px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .info-label {
+            font-size: 0.85em;
+            color: #9ca3af;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-value {
+            font-size: 1.5em;
+            font-weight: 700;
+            background: linear-gradient(135deg, #06b6d4, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .up {
+            color: #10b981;
+        }
+
+        .down {
+            color: #ef4444;
+        }
+
+        .legend {
+            display: flex;
+            gap: 25px;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(100, 200, 255, 0.1);
+            flex-wrap: wrap;
+            font-size: 0.9em;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 2px;
+        }
+
+        .error {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            color: #fca5a5;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .control-group {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            select, button {
+                width: 100%;
+            }
+
+            .chart-container {
+                height: 350px;
+            }
+
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📊 K線分析儀表板</h1>
+            <p class="subtitle">CPB Trading V5 - 即時技術分析和預測</p>
+        </header>
+
+        <div class="error" id="errorContainer"></div>
+
+        <div class="controls">
+            <div class="control-group">
+                <div>
+                    <label for="symbolSelect">選擇幣種:</label>
+                </div>
+                <select id="symbolSelect">
+                    <option value="BTC">比特幣 (BTC)</option>
+                    <option value="ETH">以太坊 (ETH)</option>
+                    <option value="SOL">Solana (SOL)</option>
+                    <option value="BNB">幣安幣 (BNB)</option>
+                    <option value="XRP">瑞波 (XRP)</option>
+                    <option value="ADA">卡爾達諾 (ADA)</option>
+                    <option value="DOGE">狗狗幣 (DOGE)</option>
+                    <option value="AVAX">Avalanche (AVAX)</option>
+                    <option value="LINK">Chainlink (LINK)</option>
+                    <option value="DOT">Polkadot (DOT)</option>
+                    <option value="LTC">萊特幣 (LTC)</option>
+                    <option value="ATOM">Cosmos (ATOM)</option>
+                </select>
+
+                <div>
+                    <label for="timeframeSelect">時間框架:</label>
+                </div>
+                <select id="timeframeSelect">
+                    <option value="1d">日線 (1D)</option>
+                    <option value="1h">小時線 (1H)</option>
+                </select>
+
+                <button onclick="loadChart()">加載圖表</button>
+            </div>
+        </div>
+
+        <div class="loading" id="loadingContainer">
+            <div class="spinner"></div>
+            <p>正在加載數據...</p>
+        </div>
+
+        <div class="chart-container">
+            <div class="chart-title" id="chartTitle">請選擇幣種並點擊「加載圖表」</div>
+            <canvas id="klineChart"></canvas>
+        </div>
+
+        <div class="info-grid" id="infoGrid">
+            <div class="info-card">
+                <div class="info-label">當前價格</div>
+                <div class="info-value" id="currentPrice">-</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">預測價格</div>
+                <div class="info-value" id="predictedPrice">-</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">價格變化</div>
+                <div class="info-value" id="priceChange">-</div>
+            </div>
+            <div class="info-card">
+                <div class="info-label">建議</div>
+                <div class="info-value" id="recommendation">-</div>
+            </div>
+        </div>
+
+        <div style="margin-top: 20px; padding: 15px; background: rgba(15, 23, 42, 0.8); border-radius: 8px; border-left: 4px solid #06b6d4;">
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #3b82f6;"></div>
+                    <span>歷史K棒 (過去30根)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #10b981;"></div>
+                    <span>當前K棒 (最新)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #f59e0b; opacity: 0.7;"></div>
+                    <span>預測K棒 (未來10根)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ef4444; opacity: 0.5;"></div>
+                    <span>預測範圍 (ATR基礎)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8001';
+        let chart = null;
+
+        async function loadChart() {
+            const symbol = document.getElementById('symbolSelect').value;
+            const timeframe = document.getElementById('timeframeSelect').value;
+
+            showLoading(true);
+            clearError();
+
+            try {
+                // 1. 獲取預測數據
+                const predResponse = await fetch(`${API_BASE}/predict-v5`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ symbol, timeframe })
+                });
+
+                if (!predResponse.ok) {
+                    throw new Error(`API錯誤: ${predResponse.status}`);
+                }
+
+                const predData = await predResponse.json();
+                console.log('預測數據:', predData);
+
+                // 2. 準備K線數據
+                const klines = predData.klines;
+                const currentPrice = predData.current_price;
+                const predictedPrice = predData.predicted_price;
+                const recommendation = predData.recommendation;
+                const atr14 = predData.volatility.atr_14;
+
+                // 3. 生成圖表數據
+                const chartData = prepareChartData(
+                    klines,
+                    currentPrice,
+                    predictedPrice,
+                    atr14,
+                    symbol,
+                    timeframe
+                );
+
+                // 4. 繪製圖表
+                drawChart(chartData, symbol, timeframe);
+
+                // 5. 更新信息卡
+                updateInfoCards(currentPrice, predictedPrice, recommendation, atr14);
+
+            } catch (error) {
+                console.error('錯誤:', error);
+                showError(`加載失敗: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function prepareChartData(klines, currentPrice, predictedPrice, atr14, symbol, timeframe) {
+            // 歷史K線
+            const historyBars = klines.slice(0, -1).map((k, idx) => ({
+                x: idx + 1,
+                o: k.open,
+                h: k.high,
+                l: k.low,
+                c: k.close,
+                v: k.volume,
+                type: 'history'
+            }));
+
+            // 當前K線
+            const currentBar = {
+                x: historyBars.length + 1,
+                o: klines[klines.length - 1].open,
+                h: klines[klines.length - 1].high,
+                l: klines[klines.length - 1].low,
+                c: currentPrice,
+                v: klines[klines.length - 1].volume,
+                type: 'current'
+            };
+
+            // 生成10根預測K線
+            const forecastBars = generateForecastBars(
+                currentPrice,
+                predictedPrice,
+                atr14,
+                historyBars.length + 2,
+                10
+            );
+
+            return {
+                history: historyBars,
+                current: currentBar,
+                forecast: forecastBars
+            };
+        }
+
+        function generateForecastBars(currentPrice, predictedPrice, atr14, startX, count) {
+            const bars = [];
+            let basePrice = currentPrice;
+            const direction = predictedPrice > currentPrice ? 1 : -1;
+            const changePerBar = (predictedPrice - currentPrice) / 5; // 5根K線達到預測價
+
+            for (let i = 0; i < count; i++) {
+                const forecast = basePrice + changePerBar * (i + 1);
+                const volatility = atr14 * (0.3 + Math.random() * 0.4);
+
+                const high = forecast + volatility;
+                const low = forecast - volatility;
+                const open = basePrice + changePerBar * 0.3;
+                const close = forecast;
+
+                bars.push({
+                    x: startX + i,
+                    o: open,
+                    h: high,
+                    l: low,
+                    c: close,
+                    v: 0,
+                    type: 'forecast'
+                });
+
+                basePrice = close;
+            }
+
+            return bars;
+        }
+
+        function drawChart(chartData, symbol, timeframe) {
+            const ctx = document.getElementById('klineChart').getContext('2d');
+            const allBars = [...chartData.history, chartData.current, ...chartData.forecast];
+
+            // 合併所有資料集
+            const datasets = [];
+
+            // 蠟燭圖數據
+            datasets.push(createCandleDataset(allBars));
+
+            // 預測範圍
+            datasets.push(createRangeDataset(chartData.forecast));
+
+            // 銷毀舊圖表
+            if (chart) {
+                chart.destroy();
+            }
+
+            chart = new Chart(ctx, {
+                type: 'scatter',
+                data: {
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            enabled: false
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            min: 1,
+                            max: allBars.length,
+                            ticks: {
+                                color: '#9ca3af',
+                                font: {
+                                    size: 11
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(100, 200, 255, 0.05)',
+                                drawBorder: false
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: '#9ca3af',
+                                font: {
+                                    size: 11
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(100, 200, 255, 0.1)',
+                                drawBorder: false
+                            }
+                        }
+                    }
+                },
+                plugins: [{
+                    id: 'candlestick',
+                    afterDatasetsDraw(chart) {
+                        const ctx = chart.ctx;
+                        const xScale = chart.scales.x;
+                        const yScale = chart.scales.y;
+
+                        allBars.forEach(bar => {
+                            const x = xScale.getPixelForValue(bar.x);
+                            const yOpen = yScale.getPixelForValue(bar.o);
+                            const yClose = yScale.getPixelForValue(bar.c);
+                            const yHigh = yScale.getPixelForValue(bar.h);
+                            const yLow = yScale.getPixelForValue(bar.l);
+                            const width = 6;
+
+                            // 決定顏色
+                            let color, bodyColor;
+                            if (bar.type === 'history') {
+                                color = bar.c >= bar.o ? '#3b82f6' : '#1e40af';
+                                bodyColor = bar.c >= bar.o ? '#60a5fa' : '#3b82f6';
+                            } else if (bar.type === 'current') {
+                                color = bar.c >= bar.o ? '#10b981' : '#059669';
+                                bodyColor = bar.c >= bar.o ? '#34d399' : '#10b981';
+                            } else {
+                                color = bar.c >= bar.o ? '#f59e0b' : '#d97706';
+                                bodyColor = bar.c >= bar.o ? '#fbbf24' : '#f59e0b';
+                            }
+
+                            // 繪製高低線
+                            ctx.strokeStyle = color;
+                            ctx.lineWidth = 1;
+                            ctx.beginPath();
+                            ctx.moveTo(x, yHigh);
+                            ctx.lineTo(x, yLow);
+                            ctx.stroke();
+
+                            // 繪製實體
+                            const bodyTop = Math.min(yOpen, yClose);
+                            const bodyHeight = Math.abs(yClose - yOpen);
+                            ctx.fillStyle = bodyColor;
+                            ctx.fillRect(x - width / 2, bodyTop, width, Math.max(bodyHeight, 2));
+                            ctx.strokeStyle = color;
+                            ctx.lineWidth = 1.5;
+                            ctx.strokeRect(x - width / 2, bodyTop, width, Math.max(bodyHeight, 2));
+                        });
+                    }
+                }]
+            });
+
+            // 更新標題
+            document.getElementById('chartTitle').textContent = `${symbol} - ${timeframe === '1d' ? '日線' : '小時線'} (最新 30 根 K 棒 + 預測 10 根)`;
+        }
+
+        function createCandleDataset(bars) {
+            return {
+                label: 'K棒',
+                data: bars.map(b => ({ x: b.x, y: b.c })),
+                pointRadius: 0,
+                showLine: false
+            };
+        }
+
+        function createRangeDataset(forecastBars) {
+            return {
+                label: '預測範圍',
+                data: forecastBars.map(b => ({
+                    x: b.x,
+                    y: [(b.l + b.h) / 2]
+                })),
+                borderColor: 'rgba(239, 68, 68, 0.3)',
+                backgroundColor: 'rgba(239, 68, 68, 0.05)',
+                borderWidth: 1,
+                borderDash: [5, 5],
+                pointRadius: 0
+            };
+        }
+
+        function updateInfoCards(currentPrice, predictedPrice, recommendation, atr14) {
+            const change = predictedPrice - currentPrice;
+            const changePct = (change / currentPrice * 100).toFixed(2);
+            const changeClass = change >= 0 ? 'up' : 'down';
+            const changeSymbol = change >= 0 ? '↑' : '↓';
+
+            document.getElementById('currentPrice').textContent = `$${currentPrice.toFixed(2)}`;
+            document.getElementById('predictedPrice').textContent = `$${predictedPrice.toFixed(2)}`;
+            document.getElementById('priceChange').innerHTML = `<span class="${changeClass}">${changeSymbol} ${changePct}%</span>`;
+            document.getElementById('recommendation').innerHTML = `<span class="${recommendation === 'BUY' ? 'up' : (recommendation === 'SELL' ? 'down' : 'neutral')}">${recommendation}</span>`;
+        }
+
+        function showLoading(show) {
+            document.getElementById('loadingContainer').classList.toggle('show', show);
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('errorContainer');
+            errorDiv.textContent = message;
+            errorDiv.classList.add('show');
+        }
+
+        function clearError() {
+            document.getElementById('errorContainer').classList.remove('show');
+        }
+
+        // 初始化
+        document.getElementById('symbolSelect').value = 'BTC';
+        document.getElementById('timeframeSelect').value = '1d';
+    </script>
+</body>
+</html>
