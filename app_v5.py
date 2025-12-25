@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 import yfinance as yf
+import json
 
 # 設定日誌
 logging.basicConfig(level=logging.INFO)
@@ -170,6 +171,102 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 # ============================================================================
+# TensorFlow 模型加載相容性層
+# ============================================================================
+
+def load_legacy_model(model_path: str):
+    """
+    加載舊版本 TensorFlow 保存的模型
+    處理 batch_shape 和其他相容性問題
+    """
+    try:
+        # 嘗試直接加載
+        logger.info(f"Attempting direct model load from {model_path}")
+        model = tf.keras.models.load_model(str(model_path))
+        logger.info("Model loaded successfully")
+        return model
+    
+    except ValueError as e:
+        logger.warning(f"Direct load failed with error: {e}")
+        logger.info("Attempting custom object scope...")
+        
+        # 如果直接加載失敗，嘗試使用 custom_objects
+        try:
+            # 為舊版本的層定義自訂物件
+            from tensorflow.keras.layers import InputLayer
+            
+            custom_objects = {
+                'InputLayer': InputLayer,
+            }
+            
+            model = tf.keras.models.load_model(
+                str(model_path),
+                custom_objects=custom_objects
+            )
+            logger.info("Model loaded successfully with custom objects")
+            return model
+        
+        except Exception as e2:
+            logger.error(f"Custom objects load also failed: {e2}")
+            logger.info("Attempting to load model config separately...")
+            
+            # 最後的手段：手動重建模型架構
+            try:
+                # 讀取 HDF5 文件中的模型配置
+                import h5py
+                
+                with h5py.File(model_path, 'r') as f:
+                    # 檢查模型結構
+                    if 'model_config' in f.attrs:
+                        config_json = f.attrs['model_config']
+                        if isinstance(config_json, bytes):
+                            config_json = config_json.decode('utf-8')
+                        
+                        config = json.loads(config_json)
+                        logger.info(f"Model config: {config['class_name']}")
+                        
+                        # 清理配置中的不相容參數
+                        def clean_config(cfg):
+                            if isinstance(cfg, dict):
+                                # 移除 batch_shape，替換為 input_shape
+                                if 'batch_shape' in cfg:
+                                    batch_shape = cfg.pop('batch_shape')
+                                    if batch_shape is not None and len(batch_shape) > 1:
+                                        cfg['input_shape'] = tuple(batch_shape[1:])
+                                    logger.info(f"Converted batch_shape {batch_shape} to input_shape")
+                                
+                                # 遞迴清理嵌套配置
+                                for key, value in cfg.items():
+                                    if isinstance(value, dict):
+                                        clean_config(value)
+                                    elif isinstance(value, list):
+                                        for item in value:
+                                            if isinstance(item, dict):
+                                                clean_config(item)
+                            return cfg
+                        
+                        config = clean_config(config)
+                        
+                        # 嘗試用清理後的配置加載
+                        config_json = json.dumps(config)
+                        model = tf.keras.models.model_from_json(
+                            config_json,
+                            custom_objects=custom_objects
+                        )
+                        
+                        # 加載權重
+                        with h5py.File(model_path, 'r') as hf:
+                            if 'model_weights' in hf:
+                                model.load_weights(hf['model_weights'])
+                        
+                        logger.info("Model rebuilt from config and weights loaded successfully")
+                        return model
+            
+            except Exception as e3:
+                logger.error(f"All model loading strategies failed: {e3}")
+                raise Exception(f"Cannot load model from {model_path}: {e3}")
+
+# ============================================================================
 # V5 模型管理
 # ============================================================================
 
@@ -217,9 +314,9 @@ class ModelManagerV5:
             local_scalers_path = MODELS_CACHE_DIR / scalers_name
             shutil.copy(scalers_path, local_scalers_path)
             
-            # 加載模型
+            # 加載模型 (使用相容性層)
             logger.info(f"Loading TensorFlow model from {local_model_path}")
-            model = tf.keras.models.load_model(str(local_model_path))
+            model = load_legacy_model(str(local_model_path))
             
             # 加載 scalers
             logger.info(f"Loading scalers from {local_scalers_path}")
@@ -239,6 +336,8 @@ class ModelManagerV5:
         
         except Exception as e:
             logger.error(f"Failed to load V5 model {symbol} {timeframe}: {e}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def predict(self, symbol: str, timeframe: str, klines_data: List[Dict]) -> Optional[Dict]:
@@ -348,11 +447,8 @@ class DataFetcherV5:
             
             # 確保列名
             required = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
-            available = [c for c in df.columns]
-            logger.info(f"Available columns: {available}")
-            
             if not all(c in df.columns for c in required):
-                logger.warning(f"Missing columns. Required: {required}, Available: {available}")
+                logger.warning(f"Missing columns. Available: {df.columns.tolist()}")
                 return None
             
             df = df[required].copy()
