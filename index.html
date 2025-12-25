@@ -65,7 +65,7 @@
             align-items: center;
         }
 
-        .menu-toggle, .theme-toggle {
+        .menu-toggle, .theme-toggle, .refresh-btn {
             background: rgba(255,255,255,0.2);
             border: none;
             color: white;
@@ -76,8 +76,42 @@
             font-size: 1rem;
         }
 
-        .menu-toggle:hover, .theme-toggle:hover {
+        .menu-toggle:hover, .theme-toggle:hover, .refresh-btn:hover {
             background: rgba(255,255,255,0.3);
+        }
+
+        .refresh-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .auto-refresh-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+            background: rgba(255,255,255,0.1);
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            color: white;
+        }
+
+        .refresh-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 1s infinite;
+        }
+
+        .refresh-status-dot.off {
+            background: #f44336;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
 
         .sidebar {
@@ -212,6 +246,15 @@
         .btn-primary:disabled {
             opacity: 0.6;
             cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .btn-secondary:hover {
+            background-color: #ddd;
         }
 
         .tag-group {
@@ -491,12 +534,41 @@
             color: var(--text-secondary);
             margin-top: 0.5rem;
         }
+
+        .refresh-control {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            padding: 1rem;
+            background-color: var(--bg-secondary);
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+
+        .refresh-control select {
+            padding: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+        }
+
+        .last-update-time {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
     </style>
 </head>
 <body>
     <div class="navbar">
         <div class="navbar-title">📊 CPB Trading V5</div>
         <div class="navbar-controls">
+            <div class="auto-refresh-indicator">
+                <span class="refresh-status-dot" id="refresh-indicator"></span>
+                <span id="refresh-time">自動更新: 關閉</span>
+            </div>
+            <button class="refresh-btn" onclick="manualRefresh()" title="立即刷新" id="manual-refresh-btn">🔄 刷新</button>
             <button class="menu-toggle" onclick="toggleSidebar()">☰ 菜單</button>
             <button class="theme-toggle" onclick="toggleTheme()">🌙 深色</button>
         </div>
@@ -512,6 +584,19 @@
         <div id="prediction" class="page active">
             <div class="card">
                 <div class="card-title">加密貨幣價格預測</div>
+
+                <div class="refresh-control">
+                    <label for="auto-refresh-interval">自動更新間隔:</label>
+                    <select id="auto-refresh-interval" onchange="updateAutoRefreshInterval()">
+                        <option value="">❌ 不自動更新</option>
+                        <option value="30">⏱️ 每30秒</option>
+                        <option value="60" selected>⏱️ 每1分鐘</option>
+                        <option value="120">⏱️ 每2分鐘</option>
+                        <option value="300">⏱️ 每5分鐘</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="testAutoRefresh()" style="margin-left: auto;">🧪 測試自動更新</button>
+                </div>
+                <div class="last-update-time" id="last-update-time"></div>
 
                 <div class="form-group">
                     <div class="form-label">📊 數據源選擇</div>
@@ -674,6 +759,19 @@
             <div class="card">
                 <div class="card-title">📈 市場分析 - 最佳開單點位</div>
 
+                <div class="refresh-control">
+                    <label for="auto-refresh-interval-analysis">自動更新間隔:</label>
+                    <select id="auto-refresh-interval-analysis" onchange="updateAutoRefreshIntervalAnalysis()">
+                        <option value="">❌ 不自動更新</option>
+                        <option value="30">⏱️ 每30秒</option>
+                        <option value="60" selected>⏱️ 每1分鐘</option>
+                        <option value="120">⏱️ 每2分鐘</option>
+                        <option value="300">⏱️ 每5分鐘</option>
+                    </select>
+                    <button class="btn btn-secondary" onclick="testAutoRefreshAnalysis()" style="margin-left: auto;">🧪 測試自動更新</button>
+                </div>
+                <div class="last-update-time" id="last-update-time-analysis"></div>
+
                 <div class="form-group">
                     <div class="form-label">📊 數據源選擇</div>
                     <div class="tag-group">
@@ -815,6 +913,10 @@
         const API_BASE = localStorage.getItem('api_endpoint') || 'http://localhost:8001';
         let currentDataSource = localStorage.getItem('dataSource') || 'yfinance';
         let currentAnalysisDataSource = localStorage.getItem('analysisDataSource') || 'yfinance';
+        let autoRefreshInterval = null;
+        let autoRefreshIntervalAnalysis = null;
+        let lastUpdateTime = null;
+        let lastUpdateTimeAnalysis = null;
 
         // 智能小數位數格式化函數
         function formatPrice(price) {
@@ -850,6 +952,96 @@
             return '0.' + validDecimals;
         }
 
+        // 更新最後更新時間
+        function updateLastUpdateTime() {
+            lastUpdateTime = new Date();
+            const timeStr = lastUpdateTime.toLocaleTimeString('zh-TW');
+            document.getElementById('last-update-time').innerHTML = `<span style="color: var(--success-color);">✅ 最後更新: ${timeStr}</span>`;
+        }
+
+        function updateLastUpdateTimeAnalysis() {
+            lastUpdateTimeAnalysis = new Date();
+            const timeStr = lastUpdateTimeAnalysis.toLocaleTimeString('zh-TW');
+            document.getElementById('last-update-time-analysis').innerHTML = `<span style="color: var(--success-color);">✅ 最後更新: ${timeStr}</span>`;
+        }
+
+        // 更新自動更新指示器
+        function updateAutoRefreshIndicator() {
+            const interval = document.getElementById('auto-refresh-interval').value;
+            const indicator = document.getElementById('refresh-indicator');
+            const timeSpan = document.getElementById('refresh-time');
+            
+            if (interval) {
+                indicator.classList.remove('off');
+                timeSpan.textContent = `自動更新: 每${interval}秒`;
+            } else {
+                indicator.classList.add('off');
+                timeSpan.textContent = '自動更新: 關閉';
+            }
+        }
+
+        // 更新自動更新間隔
+        function updateAutoRefreshInterval() {
+            const interval = document.getElementById('auto-refresh-interval').value;
+            
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+            
+            if (interval) {
+                autoRefreshInterval = setInterval(() => {
+                    const hasResults = document.getElementById('results').style.display !== 'none';
+                    if (hasResults) {
+                        getPrediction();
+                    }
+                }, parseInt(interval) * 1000);
+            }
+            
+            updateAutoRefreshIndicator();
+        }
+
+        function updateAutoRefreshIntervalAnalysis() {
+            const interval = document.getElementById('auto-refresh-interval-analysis').value;
+            
+            if (autoRefreshIntervalAnalysis) {
+                clearInterval(autoRefreshIntervalAnalysis);
+                autoRefreshIntervalAnalysis = null;
+            }
+            
+            if (interval) {
+                autoRefreshIntervalAnalysis = setInterval(() => {
+                    const hasResults = document.getElementById('analysis-results').style.display !== 'none';
+                    if (hasResults) {
+                        performMarketAnalysis();
+                    }
+                }, parseInt(interval) * 1000);
+            }
+        }
+
+        // 手動刷新
+        function manualRefresh() {
+            const predictionActive = document.getElementById('results').style.display !== 'none';
+            const analysisActive = document.getElementById('analysis-results').style.display !== 'none';
+            
+            if (predictionActive) {
+                getPrediction();
+            } else if (analysisActive) {
+                performMarketAnalysis();
+            }
+        }
+
+        // 測試自動更新
+        function testAutoRefresh() {
+            alert('✅ 測試開始！將在當前設置的間隔內自動更新預測數據。');
+            updateAutoRefreshInterval();
+        }
+
+        function testAutoRefreshAnalysis() {
+            alert('✅ 測試開始！將在當前設置的間隔內自動更新市場分析數據。');
+            updateAutoRefreshIntervalAnalysis();
+        }
+
         // 初始化
         function init() {
             const theme = localStorage.getItem('theme') || 'light';
@@ -857,6 +1049,12 @@
                 document.body.classList.add('dark-mode');
             }
             document.getElementById('api-endpoint').value = API_BASE;
+            updateAutoRefreshIndicator();
+            
+            // 保存自動更新間隔
+            const savedInterval = localStorage.getItem('autoRefreshInterval') || '60';
+            document.getElementById('auto-refresh-interval').value = savedInterval;
+            updateAutoRefreshInterval();
         }
 
         // 切換頁面
@@ -944,6 +1142,7 @@
 
                 if (response.ok) {
                     displayResults(data);
+                    updateLastUpdateTime();
                 } else {
                     showAlert('error', data.detail || '獲取預測失敗');
                 }
@@ -978,6 +1177,7 @@
 
                 if (response.ok) {
                     displayAnalysisResults(data);
+                    updateLastUpdateTimeAnalysis();
                 } else {
                     showAnalysisAlert('error', data.detail || '市場分析失敗');
                 }
@@ -1205,6 +1405,7 @@
         function saveSettings() {
             const endpoint = document.getElementById('api-endpoint').value;
             localStorage.setItem('api_endpoint', endpoint);
+            localStorage.setItem('autoRefreshInterval', document.getElementById('auto-refresh-interval').value);
             showAlert('success', '✅ 設定已保存');
             setTimeout(() => location.reload(), 1500);
         }
