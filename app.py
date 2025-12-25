@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 CPB Trading Web - V5 Model (HYBRID VERSION) - DEBUG VERSION
-包含市场分析端点和价格校正
+包含市场分析端点和价格校正 + 残差补偿
 """
 
 import asyncio
@@ -53,6 +53,7 @@ class PredictionResponse(BaseModel):
     timeframe: str
     current_price: float
     predicted_price: float
+    original_predicted_price: float  # 修正前的价格
     log_return: float
     confidence: float
     recommendation: str
@@ -64,6 +65,7 @@ class PredictionResponse(BaseModel):
     timestamp: str
     price_source: str
     model_version: str
+    residual_bias_compensation: float  # 应用的残差补偿值
 
 class MarketAnalysisRequest(BaseModel):
     symbol: str
@@ -82,12 +84,15 @@ class MarketAnalysisResponse(BaseModel):
 logger.debug("数据模型已定义")
 
 # ============================================================================
-# 价格修正模块 - 处理 MAPE 偏移
+# 价格修正模块 - 处理 MAPE 偏移 + 残差补偿
 # ============================================================================
 
 class PriceCorrector:
     """
     处理模型预测的价格偏移
+    包括：
+    1. 动态波动率修正 (Dynamic Volatility Correction)
+    2. 残差偏差补偿 (Residual Bias Compensation) - 基于 2025-12-25 分析
     """
     
     def __init__(self):
@@ -96,16 +101,38 @@ class PriceCorrector:
             'aggressive_low': 0.85,
             'moderate': 1.00,
         }
+        
+        # ========== 关键：残差补偿表 ==========
+        # 数据来源：check_residuals.py (2025-12-25 20:30:01)
+        # 基于 90 天历史数据的系统性偏差分析
+        # 只补偿 "显著低估" 和 "轻微低估" 的币种
+        # 小币种的偏差太小或不稳定，不做静态补偿
+        self.residual_bias_map = {
+            'BTC-USD': 500.0,      # 平均残差 496.24 → 补偿 500
+            'ETH-USD': 21.5,       # 平均残差 21.49 → 补偿 21.5
+            'BNB-USD': 5.0,        # 平均残差 4.94 → 补偿 5.0
+            'SOL-USD': 1.5,        # 平均残差 1.50 → 补偿 1.5
+            'LTC-USD': 0.4,        # 平均残差 0.41 → 补偿 0.4
+            'AVAX-USD': 0.2,       # 平均残差 0.19 → 补偿 0.2
+            'LINK-USD': 0.13,      # 平均残差 0.13 → 补偿 0.13
+            # 不补偿：DOGE (0.0018), ADA (0.0049), DOT (0.016), XRP (0.028), ATOM (0.029)
+            # 原因：偏差极小或标准差过大，补偿反而加大误差
+        }
+        
         logger.info("价格修正器已初始化")
+        logger.info(f"残差补偿表加载: {len(self.residual_bias_map)} 个币种")
+        for sym, bias in self.residual_bias_map.items():
+            logger.debug(f"  {sym}: +{bias}")
     
     def correct_predicted_price(
         self,
         current_price: float,
         predicted_price: float,
         historical_prices: List[float],
-        confidence: float = 0.65
+        confidence: float = 0.65,
+        symbol: str = "BTC-USD"
     ) -> Dict:
-        logger.debug(f"开始价格修正: current={current_price}, predicted={predicted_price}")
+        logger.debug(f"开始价格修正: current={current_price}, predicted={predicted_price}, symbol={symbol}")
         
         price_array = np.array(historical_prices)
         current = float(current_price)
@@ -143,6 +170,15 @@ class PriceCorrector:
         corrected_price = max(min_price, min(max_price, corrected_price))
         logger.debug(f"修正后: {corrected_price}")
         
+        # ========== 关键：叠加残差补偿 ==========
+        residual_compensation = 0.0
+        if symbol in self.residual_bias_map:
+            residual_compensation = self.residual_bias_map[symbol]
+            corrected_price += residual_compensation
+            logger.info(f"应用残差补偿: +{residual_compensation} (symbol={symbol})")
+        else:
+            logger.debug(f"未找到 {symbol} 的补偿配置，跳过残差补偿")
+        
         return {
             'original_predicted': predicted,
             'corrected_predicted': corrected_price,
@@ -150,6 +186,7 @@ class PriceCorrector:
             'correction_pct': ((corrected_price - predicted) / predicted * 100) if predicted > 0 else 0,
             'hist_volatility': hist_volatility,
             'max_allowed_change': max_change,
+            'residual_compensation': residual_compensation,  # 新增
         }
 
 price_corrector = PriceCorrector()
@@ -360,8 +397,8 @@ class PredictionEngine:
         self.demo_mode = True
         logger.info("预测引擎已初始化 (演示模式)")
     
-    def predict(self, klines: List[Dict]) -> Dict:
-        logger.debug(f"\n[预测] 处理 {len(klines)} 根K线")
+    def predict(self, klines: List[Dict], symbol: str = "BTC-USD") -> Dict:
+        logger.debug(f"\n[预测] 处理 {len(klines)} 根K线, symbol={symbol}")
         
         closes = [k['close'] for k in klines]
         current_price = closes[-1]
@@ -382,7 +419,8 @@ class PredictionEngine:
             current_price,
             predicted_price,
             closes,
-            confidence=0.65
+            confidence=0.65,
+            symbol=symbol  # 传入符号，用于残差补偿
         )
         
         corrected_price = correction['corrected_predicted']
@@ -410,7 +448,8 @@ class PredictionEngine:
             'volatility_current': volatility_current,
             'volatility_predicted': volatility_predicted,
             'atr_14': atr_14,
-            'correction_info': correction
+            'correction_info': correction,
+            'residual_compensation': correction['residual_compensation'],  # 新增
         }
 
 prediction_engine = PredictionEngine()
@@ -439,7 +478,8 @@ async def predict_v5(request: Dict) -> PredictionResponse:
     }
     
     binance_symbol = symbol_map.get(symbol, symbol + 'USDT')
-    logger.debug(f"Binance 符号: {binance_symbol}")
+    yf_symbol = binance_symbol.replace('USDT', '-USD')  # 用于残差补偿查询
+    logger.debug(f"Binance 符号: {binance_symbol}, yfinance 符号: {yf_symbol}")
     
     try:
         klines = await data_fetcher.fetch_klines(
@@ -448,7 +488,7 @@ async def predict_v5(request: Dict) -> PredictionResponse:
             limit=25
         )
         
-        pred = prediction_engine.predict(klines)
+        pred = prediction_engine.predict(klines, symbol=yf_symbol)  # 传入 yfinance 符号
         
         current = pred['current_price']
         predicted = pred['predicted_price']
@@ -468,12 +508,14 @@ async def predict_v5(request: Dict) -> PredictionResponse:
             take_profit = current * 1.01
         
         logger.info(f"[预测] 成功: {symbol} {pred['recommendation']}")
+        logger.info(f"        残差补偿: +{pred['residual_compensation']:.2f}")
         
         return PredictionResponse(
             symbol=symbol,
             timeframe=timeframe,
             current_price=current,
             predicted_price=predicted,
+            original_predicted_price=pred['original_predicted'],
             log_return=pred['log_return'],
             confidence=pred['confidence'],
             recommendation=pred['recommendation'],
@@ -489,7 +531,8 @@ async def predict_v5(request: Dict) -> PredictionResponse:
             klines=klines,
             timestamp=datetime.now().isoformat(),
             price_source='yfinance',
-            model_version='V5 HYBRID'
+            model_version='V5 HYBRID + Residual Bias Compensation',
+            residual_bias_compensation=pred['residual_compensation'],
         )
     
     except Exception as e:
@@ -572,8 +615,14 @@ async def root():
     return {
         "message": "CPB Trading V5 HYBRID DEBUG",
         "version": "5.0.0",
+        "features": [
+            "Price prediction with dynamic volatility correction",
+            "Residual bias compensation (7 major coins)",
+            "Market trend analysis",
+            "Automatic entry/exit points"
+        ],
         "endpoints": {
-            "/predict-v5": "获取价格预测",
+            "/predict-v5": "获取价格预测 (含残差补偿)",
             "/market-analysis": "市场趋势分析和最佳入场点"
         }
     }
@@ -588,8 +637,8 @@ if __name__ == "__main__":
                CPB Trading Web - V5 Model (HYBRID VERSION) - DEBUG
 ================================================================================
 
-Model Version: V5 (HYBRID)
-Strategy: Demo Mode with Price Correction
+Model Version: V5 (HYBRID) + Residual Bias Compensation
+Strategy: Informed by 2025-12-25 high-precision residual analysis (7 decimal places)
 Price Source: yfinance (unified, consistent across timeframes)
 Supported Symbols: 14
 Timeframes: ['1d', '1h']
@@ -602,6 +651,15 @@ Docs: http://localhost:8001/docs
    - Automatic MAPE offset correction
    - Historical volatility-based bounds
    - Smart confidence-weighted adjustments
+
+⚠  RESIDUAL BIAS COMPENSATION ENABLED! (NEW)
+   - BTC-USD: +500.00
+   - ETH-USD: +21.50
+   - BNB-USD: +5.00
+   - SOL-USD: +1.50
+   - LTC-USD: +0.40
+   - AVAX-USD: +0.20
+   - LINK-USD: +0.13
 
 ⚠  MARKET ANALYSIS ENABLED!
    - Trend detection (uptrend/downtrend)
