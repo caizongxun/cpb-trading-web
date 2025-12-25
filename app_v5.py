@@ -335,14 +335,24 @@ class DataFetcherV5:
                 return None
             
             df = df.copy()
-            df.columns = [c.lower() for c in df.columns]
+            
+            # 修復列名處理 - 處理 MultiIndex 列名
+            if isinstance(df.columns, pd.MultiIndex):
+                # 如果是 MultiIndex，取第一層
+                df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
+            
+            # 轉換為小寫
+            df.columns = [str(c).lower() for c in df.columns]
             df.index.name = 'timestamp'
             df = df.reset_index()
             
             # 確保列名
             required = ['timestamp', 'open', 'high', 'low', 'close', 'volume']
+            available = [c for c in df.columns]
+            logger.info(f"Available columns: {available}")
+            
             if not all(c in df.columns for c in required):
-                logger.warning(f"Missing columns. Available: {df.columns.tolist()}")
+                logger.warning(f"Missing columns. Required: {required}, Available: {available}")
                 return None
             
             df = df[required].copy()
@@ -355,7 +365,7 @@ class DataFetcherV5:
             klines = []
             for _, row in df.iterrows():
                 klines.append({
-                    'timestamp': row['timestamp'].isoformat(),
+                    'timestamp': row['timestamp'].isoformat() if hasattr(row['timestamp'], 'isoformat') else str(row['timestamp']),
                     'open': float(row['open']),
                     'high': float(row['high']),
                     'low': float(row['low']),
@@ -367,6 +377,8 @@ class DataFetcherV5:
         
         except Exception as e:
             logger.error(f"Error fetching klines: {e}")
+            import traceback
+            traceback.print_exc()
             return None
 
 data_fetcher = DataFetcherV5()
@@ -405,43 +417,45 @@ async def get_coins_v5():
 async def predict_v5(request: PredictionRequestV5) -> PredictionResultV5:
     """V5 模型預測端點 (雙時間框架)"""
     
-    # 驗證幣種
-    if request.symbol not in SUPPORTED_CRYPTOS_V5:
+    # 驗證幣種和時間框架
+    symbol = request.symbol.upper() if isinstance(request.symbol, str) else request.symbol
+    timeframe = request.timeframe.lower() if isinstance(request.timeframe, str) else request.timeframe
+    
+    if symbol not in SUPPORTED_CRYPTOS_V5:
         raise HTTPException(
             status_code=400,
-            detail=f"Symbol {request.symbol} not supported. Available: {list(SUPPORTED_CRYPTOS_V5.keys())}"
+            detail=f"Symbol {symbol} not supported. Available: {list(SUPPORTED_CRYPTOS_V5.keys())}"
         )
     
-    # 驗證時間框架
-    if request.timeframe not in SUPPORTED_TIMEFRAMES:
+    if timeframe not in SUPPORTED_TIMEFRAMES:
         raise HTTPException(
             status_code=400,
-            detail=f"Timeframe {request.timeframe} not supported. Available: {SUPPORTED_TIMEFRAMES}"
+            detail=f"Timeframe {timeframe} not supported. Available: {SUPPORTED_TIMEFRAMES}"
         )
     
     # 1. 獲取 K 線數據
-    ticker = SUPPORTED_CRYPTOS_V5[request.symbol]['ticker']
-    days = 3000 if request.timeframe == '1d' else 400
+    ticker = SUPPORTED_CRYPTOS_V5[symbol]['ticker']
+    days = 3000 if timeframe == '1d' else 400
     
     klines = data_fetcher.fetch_klines_yfinance(
         ticker=ticker,
-        interval=request.timeframe,
+        interval=timeframe,
         days=days
     )
     
     if klines is None or len(klines) == 0:
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch klines for {request.symbol}"
+            detail=f"Failed to fetch klines for {symbol}"
         )
     
     # 2. 執行 V5 預測
-    pred_result = model_manager.predict(request.symbol, request.timeframe, klines)
+    pred_result = model_manager.predict(symbol, timeframe, klines)
     
     if pred_result is None:
         raise HTTPException(
             status_code=500,
-            detail=f"Prediction failed for {request.symbol} {request.timeframe}"
+            detail=f"Prediction failed for {symbol} {timeframe}"
         )
     
     # 3. 計算交易建議
@@ -486,8 +500,8 @@ async def predict_v5(request: PredictionRequestV5) -> PredictionResultV5:
     
     # 4. 構建響應
     result = PredictionResultV5(
-        symbol=request.symbol,
-        timeframe=request.timeframe,
+        symbol=symbol,
+        timeframe=timeframe,
         timestamp=datetime.now().isoformat(),
         current_price=round(current_price, 2),
         predicted_price=round(predicted_price, 2),
