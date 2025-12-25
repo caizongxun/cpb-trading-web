@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>CPB Trading - V5 預測系統</title>
     <style>
         * {
@@ -38,7 +41,6 @@
             transition: background-color 0.3s, color 0.3s;
         }
 
-        /* 導航欄 */
         .navbar {
             background-color: var(--accent-color);
             color: white;
@@ -71,13 +73,13 @@
             border-radius: 4px;
             cursor: pointer;
             transition: background 0.3s;
+            font-size: 1rem;
         }
 
         .menu-toggle:hover, .theme-toggle:hover {
             background: rgba(255,255,255,0.3);
         }
 
-        /* 側邊欄菜單 */
         .sidebar {
             position: fixed;
             left: -250px;
@@ -115,7 +117,6 @@
             border-left-color: white;
         }
 
-        /* 主容器 */
         .container {
             max-width: 1200px;
             margin: 0 auto;
@@ -130,7 +131,6 @@
             display: block;
         }
 
-        /* 卡片樣式 */
         .card {
             background-color: var(--bg-secondary);
             border: 1px solid var(--border-color);
@@ -147,7 +147,6 @@
             color: var(--text-primary);
         }
 
-        /* 表單控件 */
         .form-group {
             margin-bottom: 1rem;
         }
@@ -189,7 +188,6 @@
             }
         }
 
-        /* 按鈕 */
         .btn {
             padding: 0.75rem 1.5rem;
             border: none;
@@ -216,7 +214,6 @@
             cursor: not-allowed;
         }
 
-        /* 標籤組 */
         .tag-group {
             display: flex;
             gap: 0.5rem;
@@ -238,7 +235,6 @@
             color: white;
         }
 
-        /* 預測結果 */
         .result-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -264,6 +260,7 @@
             font-size: 1.5rem;
             font-weight: bold;
             color: var(--accent-color);
+            word-break: break-all;
         }
 
         .result-card-value.positive {
@@ -274,7 +271,6 @@
             color: var(--error-color);
         }
 
-        /* 推薦標籤 */
         .recommendation {
             display: inline-block;
             padding: 0.5rem 1rem;
@@ -298,7 +294,6 @@
             color: #FFC107;
         }
 
-        /* K線預測圖表區域 */
         .kline-forecast {
             background-color: var(--bg-primary);
             border: 1px solid var(--border-color);
@@ -388,7 +383,6 @@
             display: block;
         }
 
-        /* 加載狀態 */
         .loading {
             text-align: center;
             padding: 2rem;
@@ -410,7 +404,6 @@
             100% { transform: rotate(360deg); }
         }
 
-        /* 錯誤消息 */
         .alert {
             padding: 1rem;
             border-radius: 4px;
@@ -431,32 +424,27 @@
     </style>
 </head>
 <body>
-    <!-- 導航欄 -->
     <div class="navbar">
-        <div class="navbar-title">CPB Trading V5</div>
+        <div class="navbar-title">📊 CPB Trading V5</div>
         <div class="navbar-controls">
             <button class="menu-toggle" onclick="toggleSidebar()">☰ 菜單</button>
-            <button class="theme-toggle" onclick="toggleTheme()">🌙 深色模式</button>
+            <button class="theme-toggle" onclick="toggleTheme()">🌙 深色</button>
         </div>
     </div>
 
-    <!-- 側邊欄菜單 -->
     <div class="sidebar" id="sidebar">
         <div class="sidebar-item active" onclick="switchPage('prediction')">📊 預測</div>
         <div class="sidebar-item" onclick="switchPage('analysis')">📈 分析</div>
         <div class="sidebar-item" onclick="switchPage('settings')">⚙️ 設定</div>
     </div>
 
-    <!-- 主容器 -->
     <div class="container">
-        <!-- 預測頁面 -->
         <div id="prediction" class="page active">
             <div class="card">
                 <div class="card-title">加密貨幣價格預測</div>
 
-                <!-- 數據源選擇 -->
                 <div class="form-group">
-                    <div class="form-label">數據源選擇</div>
+                    <div class="form-label">📊 數據源選擇</div>
                     <div class="tag-group">
                         <div class="tag active" onclick="setDataSource('yfinance', this)">📊 yfinance</div>
                         <div class="tag" onclick="setDataSource('binance', this)">🔗 Binance</div>
@@ -466,7 +454,6 @@
                     </p>
                 </div>
 
-                <!-- 預測參數 -->
                 <div class="form-row">
                     <div class="form-group">
                         <label class="form-label">幣種</label>
@@ -503,11 +490,9 @@
                 </div>
             </div>
 
-            <!-- 預測結果 -->
             <div id="results" style="display: none;">
                 <div id="alert-container"></div>
 
-                <!-- 主要指標 -->
                 <div class="result-grid">
                     <div class="result-card">
                         <div class="result-card-label">當前價格</div>
@@ -527,9 +512,8 @@
                     </div>
                 </div>
 
-                <!-- 推薦和交易參數 -->
                 <div class="card">
-                    <div class="card-title">交易建議</div>
+                    <div class="card-title">💼 交易建議</div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
                         <div>
                             <div class="form-label">推薦信號</div>
@@ -550,9 +534,8 @@
                     </div>
                 </div>
 
-                <!-- 波動率信息 -->
                 <div class="card">
-                    <div class="card-title">市場波動率</div>
+                    <div class="card-title">📊 市場波動率</div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
                         <div>
                             <div class="form-label">當前波動率</div>
@@ -573,15 +556,13 @@
                     </div>
                 </div>
 
-                <!-- 未來10根K棒預測 -->
                 <div class="kline-forecast">
-                    <div class="kline-forecast-title">📊 未來10根K棒價格預測</div>
+                    <div class="kline-forecast-title">📈 未來10根K棒價格預測</div>
                     <div class="kline-forecast-chart" id="forecast-chart"></div>
                 </div>
 
-                <!-- 最近K線 -->
                 <div class="card">
-                    <div class="card-title">📈 最近20根K線</div>
+                    <div class="card-title">📋 最近20根K線</div>
                     <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
                             <thead>
@@ -599,9 +580,8 @@
                     </div>
                 </div>
 
-                <!-- 模型信息 -->
                 <div class="card">
-                    <div class="card-title">📋 預測信息</div>
+                    <div class="card-title">📍 預測信息</div>
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
                         <div>
                             <div class="form-label">數據源</div>
@@ -620,7 +600,6 @@
             </div>
         </div>
 
-        <!-- 分析頁面 -->
         <div id="analysis" class="page">
             <div class="card">
                 <div class="card-title">📈 市場分析</div>
@@ -628,7 +607,6 @@
             </div>
         </div>
 
-        <!-- 設定頁面 -->
         <div id="settings" class="page">
             <div class="card">
                 <div class="card-title">⚙️ 應用設定</div>
@@ -643,7 +621,7 @@
                     <label class="form-label">API 端點</label>
                     <input type="text" class="form-control" id="api-endpoint" value="http://localhost:8001" />
                 </div>
-                <button class="btn btn-primary" onclick="saveSettings()">保存設定</button>
+                <button class="btn btn-primary" onclick="saveSettings()">💾 保存設定</button>
             </div>
         </div>
     </div>
@@ -651,6 +629,47 @@
     <script>
         const API_BASE = localStorage.getItem('api_endpoint') || 'http://localhost:8001';
         let currentDataSource = localStorage.getItem('dataSource') || 'yfinance';
+
+        // 智能小數位數格式化函數
+        function formatPrice(price) {
+            if (!price || price === 0) return '0.00';
+            
+            const priceStr = price.toString();
+            
+            // 如果是很小的數字 (例如 0.00004500)
+            if (price < 0.0001) {
+                // 找到第一個非零數字的位置
+                const match = priceStr.match(/^0\.(0+)/);
+                if (match) {
+                    const zeros = match[1].length;
+                    // 保留首個非零數字之後的4位有效數字
+                    return price.toFixed(zeros + 4).replace(/0+$/, '');
+                }
+            }
+            
+            // 如果是整數或大於1
+            if (price >= 1) {
+                const decimal = priceStr.split('.')[1];
+                if (!decimal) return price.toFixed(2);
+                
+                // 找到有效小數位 (去掉尾部的0)
+                let validDecimals = decimal.replace(/0+$/, '');
+                if (validDecimals.length === 0) return Math.floor(price).toString();
+                
+                // 最多保留10位小數
+                validDecimals = validDecimals.substring(0, 10);
+                return price.toString().split('.')[0] + '.' + validDecimals;
+            }
+            
+            // 0.001 ~ 0.9999 之間的數字
+            const decimal = priceStr.split('.')[1];
+            if (!decimal) return '0.00';
+            
+            let validDecimals = decimal.replace(/0+$/, '');
+            validDecimals = validDecimals.substring(0, 10);
+            
+            return '0.' + validDecimals;
+        }
 
         // 初始化
         function init() {
@@ -746,8 +765,8 @@
 
         // 顯示結果
         function displayResults(data) {
-            document.getElementById('current-price').textContent = `$${data.current_price.toFixed(2)}`;
-            document.getElementById('predicted-price').textContent = `$${data.predicted_price.toFixed(2)}`;
+            document.getElementById('current-price').textContent = `$${formatPrice(data.current_price)}`;
+            document.getElementById('predicted-price').textContent = `$${formatPrice(data.predicted_price)}`;
             
             const returnPercent = (data.log_return * 100).toFixed(2);
             const returnElement = document.getElementById('log-return');
@@ -760,27 +779,24 @@
             recElement.textContent = data.recommendation;
             recElement.className = 'recommendation ' + data.recommendation.toLowerCase();
             
-            document.getElementById('entry-price').textContent = data.entry_price.toFixed(2);
-            document.getElementById('stop-loss').textContent = data.stop_loss.toFixed(2);
-            document.getElementById('take-profit').textContent = data.take_profit.toFixed(2);
+            document.getElementById('entry-price').textContent = formatPrice(data.entry_price);
+            document.getElementById('stop-loss').textContent = formatPrice(data.stop_loss);
+            document.getElementById('take-profit').textContent = formatPrice(data.take_profit);
             
             document.getElementById('volatility-current').textContent = data.volatility.current.toFixed(4);
             document.getElementById('volatility-predicted').textContent = data.volatility.predicted.toFixed(4);
             document.getElementById('volatility-level').textContent = data.volatility.level;
-            document.getElementById('atr-14').textContent = data.volatility.atr_14.toFixed(2);
+            document.getElementById('atr-14').textContent = formatPrice(data.volatility.atr_14);
             
             document.getElementById('info-source').textContent = data.price_source;
             document.getElementById('info-model').textContent = data.model_version;
             document.getElementById('info-time').textContent = new Date(data.timestamp).toLocaleString('zh-TW');
             
-            // 繪製未來10根K棒預測
             drawForecastChart(data.current_price, data.predicted_price, data.log_return);
-            
-            // 顯示最近K線
             displayKlines(data.klines);
             
             document.getElementById('results').style.display = 'block';
-            showAlert('success', '預測成功！');
+            showAlert('success', '✅ 預測成功！');
         }
 
         // 繪製未來10根K棒預測
@@ -793,7 +809,6 @@
             const maxPrice = Math.max(currentPrice, predictedPrice) + priceRange;
             const priceSpan = maxPrice - minPrice;
             
-            // 生成10根K棒，逐步從當前價格過渡到預測價格
             for (let i = 0; i < 10; i++) {
                 const progress = (i + 1) / 10;
                 const forecastPrice = currentPrice + (predictedPrice - currentPrice) * progress;
@@ -812,7 +827,7 @@
                 
                 const tooltip = document.createElement('div');
                 tooltip.className = 'kline-tooltip';
-                tooltip.textContent = `$${kPrice.toFixed(2)}`;
+                tooltip.textContent = `$${formatPrice(kPrice)}`;
                 bar.appendChild(tooltip);
                 
                 const label = document.createElement('div');
@@ -842,10 +857,10 @@
                 row.style.borderBottom = `1px solid var(--border-color)`;
                 row.innerHTML = `
                     <td style="padding: 0.5rem;">${time}</td>
-                    <td style="padding: 0.5rem; text-align: right;">${k.open.toFixed(2)}</td>
-                    <td style="padding: 0.5rem; text-align: right;">${k.high.toFixed(2)}</td>
-                    <td style="padding: 0.5rem; text-align: right;">${k.low.toFixed(2)}</td>
-                    <td style="padding: 0.5rem; text-align: right; color: ${k.close >= k.open ? 'var(--success-color)' : 'var(--error-color)'}; font-weight: bold;">${k.close.toFixed(2)}</td>
+                    <td style="padding: 0.5rem; text-align: right;">${formatPrice(k.open)}</td>
+                    <td style="padding: 0.5rem; text-align: right;">${formatPrice(k.high)}</td>
+                    <td style="padding: 0.5rem; text-align: right;">${formatPrice(k.low)}</td>
+                    <td style="padding: 0.5rem; text-align: right; color: ${k.close >= k.open ? 'var(--success-color)' : 'var(--error-color)'}; font-weight: bold;">${formatPrice(k.close)}</td>
                     <td style="padding: 0.5rem; text-align: right;">${(k.volume / 1e6).toFixed(2)}M</td>
                 `;
                 tbody.appendChild(row);
@@ -865,7 +880,8 @@
         function saveSettings() {
             const endpoint = document.getElementById('api-endpoint').value;
             localStorage.setItem('api_endpoint', endpoint);
-            location.reload();
+            showAlert('success', '✅ 設定已保存');
+            setTimeout(() => location.reload(), 1500);
         }
 
         // 初始化
