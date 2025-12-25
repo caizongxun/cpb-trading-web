@@ -3,6 +3,7 @@
 """
 Residual (残差) 计算脚本
 计算每个币种的系统性偏差 (Systematic Bias)
+高精度 (7位小数) - 对小币种有效
 
 残差 = 实际价 - 预测价
 - 残差 > 0: 模型整体低估
@@ -24,6 +25,18 @@ SYMBOLS = [
     'ADA-USD', 'DOGE-USD', 'AVAX-USD', 'LINK-USD', 'DOT-USD',
     'LTC-USD', 'ATOM-USD'
 ]
+
+# 精度配置
+PRECISION = 7  # 小数点7位
+
+def format_price(value):
+    """格式化价格 - 去除尾部0"""
+    if abs(value) < 1e-7:
+        return "0"
+    formatted = f"{value:.{PRECISION}f}"
+    # 去除尾部0
+    formatted = formatted.rstrip('0').rstrip('.')
+    return formatted
 
 def v5_logic_predict(window_closes):
     """模拟 V5 模型的预测逻辑"""
@@ -140,23 +153,23 @@ def interpret_residual(mean_residual, std_residual):
     """
     abs_mean = abs(mean_residual)
     
-    if abs_mean < 100:
+    if abs_mean < 0.1:
         interpretation = "模型不需调整，非常准"
-    elif abs_mean < 500:
+    elif abs_mean < 0.5:
         interpretation = "小幅偏差，低估/高估很齐"
-    elif abs_mean < 1000:
+    elif abs_mean < 1.0:
         interpretation = "中等偏差，建议校正"
     else:
-        interpretation = "大系统性偏差，需要校正"
+        interpretation = "较大残差，需要校正"
     
-    bias_quality = "稳定偏差（容易修复）" if std_residual < abs_mean else "不稳定偏差（难改善）"
+    bias_quality = "稳定 (容易修复)" if std_residual < abs_mean else "不稳定 (难改善)"
     
     return f"{interpretation} | {bias_quality}"
 
 # === 主程序 ===
-print("\n" + "="*130)
-print("残差 (Residual) 分析 - 计算每个币种的系统性偏差")
-print("="*130)
+print("\n" + "="*160)
+print("残差 (Residual) 分析 - 计算每个币种的系统性偏差 【高精度 7位小数】")
+print("="*160)
 print(f"执行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 print(f"每个币种会回测最近 90 天的数据，正常一次配置需要 5-15 分钟\n")
 
@@ -170,7 +183,7 @@ for sym in SYMBOLS:
     else:
         errors.append(sym)
 
-print("\n" + "="*130)
+print("\n" + "="*160)
 
 # 打印表头
 header_symbol = "币种"
@@ -180,8 +193,8 @@ header_median = "中位数"
 header_range = "最小~最大"
 header_interp = "为什么"
 
-print(f"{header_symbol:<10} | {header_mean:<16} | {header_std:<16} | {header_median:<16} | {header_range:<28} | {header_interp:<45}")
-print("="*130)
+print(f"{header_symbol:<10} | {header_mean:<25} | {header_std:<25} | {header_median:<25} | {header_range:<45} | {header_interp:<45}")
+print("="*160)
 
 if results:
     for res in sorted(results, key=lambda x: abs(x['mean_residual'])):
@@ -193,10 +206,17 @@ if results:
         max_res = res['max_residual']
         interpretation = interpret_residual(mean_res, std_res)
         
-        range_str = f"{min_res:.0f}~{max_res:.0f}$"
-        print(f"{symbol_name:<10} | {mean_res:>15.2f}$ | {std_res:>15.2f}$ | {median_res:>15.2f}$ | {range_str:<28} | {interpretation:<45}")
+        # 格式化数值 - 7位小数
+        mean_str = format_price(mean_res)
+        std_str = format_price(std_res)
+        median_str = format_price(median_res)
+        min_str = format_price(min_res)
+        max_str = format_price(max_res)
+        
+        range_str = f"{min_str}~{max_str}"
+        print(f"{symbol_name:<10} | {mean_str:>23}$ | {std_str:>23}$ | {median_str:>23}$ | {range_str:<45} | {interpretation:<45}")
 
-print("="*130)
+print("="*160)
 
 # 统计汇总
 print(f"\n统计汇总:")
@@ -205,14 +225,14 @@ if results:
     avg_median = np.median([r['median_residual'] for r in results])
     avg_std = np.mean([r['std_residual'] for r in results])
     
-    print(f"  总体平均残差: {avg_mean:.2f}$")
-    print(f"  总体中位数: {avg_median:.2f}$")
-    print(f"  总体标准差: {avg_std:.2f}$")
+    print(f"  总体平均残差: {format_price(avg_mean)}$")
+    print(f"  总体中位数: {format_price(avg_median)}$")
+    print(f"  总体标准差: {format_price(avg_std)}$")
     
-    if avg_mean > 0:
-        print(f"  \u63a8估模型: 整体低估 (↓ 所有币种平均偏低 {avg_mean:.2f}$)")
-    elif avg_mean < 0:
-        print(f"  \u63a8估模型: 整体高估 (↑ 所有币种平均偏高 {abs(avg_mean):.2f}$)")
+    if avg_mean > 0.0001:
+        print(f"  \u63a8估模型: 整体低估 (\u2193 所有币种平均偏低 {format_price(avg_mean)}$)")
+    elif avg_mean < -0.0001:
+        print(f"  \u63a8估模型: 整体高估 (\u2191 所有币种平均偏高 {format_price(abs(avg_mean))}$)")
     else:
         print(f"  \u63a8估模型: 完全无偏差")
     
@@ -221,7 +241,7 @@ if results:
 if errors:
     print(f"  失败: {len(errors)} 个币种")
 
-print("\n" + "="*130)
+print("\n" + "="*160)
 print("\n残差解读指南:")
 print("""
   残差 = 实际价 - 预测价
@@ -239,4 +259,4 @@ print("""
     - 負值残差 -> 模型高估 -> 負值修正
 """.strip())
 
-print("\n" + "="*130 + "\n")
+print("\n" + "="*160 + "\n")
