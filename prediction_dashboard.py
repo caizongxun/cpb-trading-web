@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 CPB Trading - Prediction Dashboard
-支持 V5/V6 版本選擇，多幣種複選，未来 10 根与步預測可視化
+支持 V5/V6 版本選擇，多幣種複選，未來 10 根 K 棒預測可視化
 """
 
 import os
@@ -36,7 +36,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============================================================================
-# 數业模弋
+# 數據模型
 # ============================================================================
 
 class ForecastBar(BaseModel):
@@ -60,15 +60,18 @@ class PredictionForecast(BaseModel):
 # ============================================================================
 
 class ModelManager:
-    """管理 V5 徒 V6 模型的上載、希靈化並但及預測"""
+    """管理 V5 和 V6 模型的上載、初始化並執行預測"""
     
-    # V5 支持的幣種 (出于訓練繁教)
-    V5_COINS = ['BTC', 'ETH', 'BNB', 'ADA', 'SOL', 'XRP', 'DOGE', 'ATOM']
+    # V5 支持的幣種 (原始訓練幣種) - 14種
+    V5_COINS = [
+        'BTC', 'ETH', 'BNB', 'ADA', 'SOL', 'XRP', 'DOGE', 'ATOM',
+        'DOT', 'LTC', 'LINK', 'UNI', 'AVAX', 'XLM'
+    ]
     
-    # V6 支持的幣種 (更模訓練繁教)
+    # V6 支持的幣種 (更多訓練幣種) - 14+種
     V6_COINS = [
         'BTC', 'ETH', 'BNB', 'SOL', 'XRP', 'AVAX', 'DOGE', 'ADA',
-        'DOT', 'LTC', 'LINK', 'ATOM', 'UNI', 'XLM'
+        'DOT', 'LTC', 'LINK', 'ATOM', 'UNI', 'XLM', 'MATIC', 'ARB'
     ]
     
     def __init__(self):
@@ -95,7 +98,7 @@ class ModelManager:
         cache_key = f"{version}-{symbol}-{timeframe}"
         
         if cache_key in self.models_cache:
-            logger.debug(f"使用緩存模弋: {cache_key}")
+            logger.debug(f"使用緩存模型: {cache_key}")
             return self.models_cache[cache_key]
         
         if not self.hf_available or not self.tf_available:
@@ -103,7 +106,7 @@ class ModelManager:
             return None
         
         try:
-            logger.info(f"下載模弋: {symbol} {version} {timeframe}")
+            logger.info(f"下載模型: {symbol} {version} {timeframe}")
             
             model_path = hf_hub_download(
                 repo_id="zongowo111/cpb-models",
@@ -134,7 +137,7 @@ class ModelManager:
             return model
         
         except Exception as e:
-            logger.error(f"模弋下載失敗: {e}")
+            logger.error(f"模型下載失敗: {e}")
             return None
     
     def normalize_data(self, X: np.ndarray, scaler=None) -> Tuple[np.ndarray, dict]:
@@ -166,30 +169,30 @@ class ModelManager:
         timeframe: str = '1h',
         steps_ahead: int = 10
     ) -> Dict:
-        """預測未数 N 根 K 棒的價格"""
+        """預測未來 N 根 K 棒的價格"""
         
         logger.info(f"\n=== 預測 {symbol} {version} ===")
-        logger.info(f"歷史數據: {len(historical_prices)} \u6839")
-        logger.info(f預測步數: {steps_ahead}")
+        logger.info(f"歷史數據: {len(historical_prices)} 根")
+        logger.info(f"預測步數: {steps_ahead}")
         
         prices = np.array(historical_prices)
         
-        # 試著加載真實模弋
+        # 試著加載真實模型
         model = await self.load_model(symbol, version, timeframe)
         model_loaded = model is not None
         
         if not model_loaded:
-            logger.warning(f"缺少真實模弋, 使用綜合數據")
-            # 綜合數據: 安静締常物稱趋勢
+            logger.warning(f"缺少真實模型, 使用綜合數據")
+            # 綜合數據: 安靜程度常規趨勢
             return self._generate_synthetic_forecast(
                 historical_prices,
                 symbol,
                 steps_ahead
             )
         
-        # 有真實模弋
+        # 有真實模型
         try:
-            # 使用不同的 lookback 模你
+            # 使用不同的 lookback 模式
             for lookback in [60, 50, 40, 30, 20]:
                 if len(prices) < lookback:
                     continue
@@ -203,7 +206,7 @@ class ModelManager:
                 
                 X_norm, norm_info = self.normalize_data(X, scaler)
                 
-                # 來雖推
+                # 執行推論
                 pred_norm = model.predict(X_norm, verbose=0)
                 
                 # 反正規化
@@ -220,7 +223,7 @@ class ModelManager:
                     forecast_prices = predictions[:steps_ahead]
                 
                 if len(forecast_prices) >= steps_ahead:
-                    logger.info(f"成功概述: lookback={lookback}, 預測 {len(forecast_prices)} 根")
+                    logger.info(f"成功預測: lookback={lookback}, 預測 {len(forecast_prices)} 根")
                     
                     return {
                         'success': True,
@@ -231,10 +234,10 @@ class ModelManager:
                     }
         
         except Exception as e:
-            logger.error(f"真實模弋預測失敗: {e}")
+            logger.error(f"真實模型預測失敗: {e}")
         
-        # 回來綜合數據
-        logger.info("會初綜合數據")
+        # 回到綜合數據
+        logger.info("使用綜合數據")
         return self._generate_synthetic_forecast(
             historical_prices,
             symbol,
@@ -247,18 +250,18 @@ class ModelManager:
         symbol: str,
         steps_ahead: int = 10
     ) -> Dict:
-        """綜合數據預測 (靜樫跋庋牢)"""
+        """綜合數據預測 (靜態基礎模式)"""
         
         prices = np.array(historical_prices)
         current = prices[-1]
         
-        # 計算趣勢
+        # 計算趨勢
         if len(prices) > 10:
             recent_avg = prices[-10:].mean()
             past_avg = prices[-20:-10].mean()
             trend = (recent_avg - past_avg) / past_avg if past_avg > 0 else 0
         else:
-            trend = 0.001  # 準中是法撤趣勢
+            trend = 0.001  # 準備是法撤趨勢
         
         # 計算波動性
         returns = np.diff(prices) / prices[:-1]
@@ -271,8 +274,8 @@ class ModelManager:
         price = current
         
         for i in range(steps_ahead):
-            # 缀於的影響
-            trend_component = trend * (1 - i / steps_ahead)  # 遅滿鯊趣勢
+            # 趨勢的影響
+            trend_component = trend * (1 - i / steps_ahead)  # 遞減衰減趨勢
             volatility_component = np.random.normal(0, volatility)
             
             price_change = (trend_component + volatility_component) * price
@@ -283,7 +286,7 @@ class ModelManager:
         return {
             'success': True,
             'forecast_prices': forecast,
-            'confidence': 0.45,  # 低罪信心度表示綜合
+            'confidence': 0.45,  # 低信心度表示綜合
             'model_loaded': False,
             'trend': trend,
             'volatility': volatility
@@ -298,12 +301,12 @@ model_manager = ModelManager()
 app = FastAPI(
     title="CPB Prediction Dashboard",
     version="2.0.0",
-    description="V5/V6 版本選擇, 數位化未来預測"
+    description="V5/V6 版本選擇, 數位化未來預測"
 )
 
 @app.get("/predict/available-coins")
 async def get_available_coins():
-    """取得上訓練繁教的幣種清單"""
+    """取得各訓練版本的幣種清單"""
     return {
         'V5': model_manager.get_available_coins('V5'),
         'V6': model_manager.get_available_coins('V6')
@@ -316,12 +319,12 @@ async def predict_forecast(
     timeframe: str = '1h',
     historical_prices: List[float] = None
 ) -> PredictionForecast:
-    """預測未新 10 根 K 棒"""
+    """預測未來 10 根 K 棒"""
     
     logger.info(f"\n=== 預測請求 ===")
-    logger.info(f稦號: {symbol}")
-    logger.info(f版本: {version}")
-    logger.info(f時間核: {timeframe}")
+    logger.info(f"幣號: {symbol}")
+    logger.info(f"版本: {version}")
+    logger.info(f"時間核: {timeframe}")
     
     # 檢查幣種支援
     if not model_manager.check_coin_support(symbol, version):
@@ -332,7 +335,7 @@ async def predict_forecast(
     
     # 提供範例數據
     if not historical_prices:
-        logger.info("使用範例数據")
+        logger.info("使用範例數據")
         historical_prices = [
             40000 + i*100 + np.random.normal(0, 500)
             for i in range(30)
@@ -344,7 +347,7 @@ async def predict_forecast(
             detail="需要至少 10 根歷史數據"
         )
     
-    # 預測上次 10 根
+    # 預測未來 10 根
     forecast_result = await model_manager.predict_future(
         historical_prices,
         symbol,
@@ -356,7 +359,7 @@ async def predict_forecast(
     current_price = float(historical_prices[-1])
     forecast_prices = forecast_result['forecast_prices']
     
-    # 構易預測 K 棒
+    # 構築預測 K 棒
     forecast_bars = [
         ForecastBar(
             bar_index=i+1,
@@ -384,16 +387,20 @@ async def root():
         "name": "CPB Prediction Dashboard",
         "version": "2.0.0",
         "features": [
-            "V5/V6 版本策筆",
-            "敵幣種自動鳾殇",
+            "V5/V6 版本選擇",
+            "多幣種自動偵測",
             "未來 10 根 K 棒預測",
-            "真實模弋主動下載「教訓榕",
-            "綜合數據回上樫跋学"
+            "真實模型自動下載 (HuggingFace)",
+            "綜合數據回退機制"
         ],
+        "coin_counts": {
+            "V5": len(ModelManager.V5_COINS),
+            "V6": len(ModelManager.V6_COINS)
+        },
         "endpoints": {
             "/predict/available-coins": "取得各版本支援的幣種",
-            "/predict/forecast": "預測未来 10 根 K 棒",
-            "/docs": "Swagger API 文伋"
+            "/predict/forecast": "預測未來 10 根 K 棒",
+            "/docs": "Swagger API 文檔"
         }
     }
 
@@ -407,10 +414,10 @@ if __name__ == "__main__":
 
 Features:
   ✓ V5/V6 版本選擇
-  ✓ 敵幣種支援邊䨙 (V5: 8種, V6: 14種)
+  ✓ 多幣種支援 (V5: 14種, V6: 16+種)
   ✓ 未來 10 根 K 棒預測
-  ✓ 真實模弋主動下載
-  ✓ 綜合数據回例
+  ✓ 真實模型自動下載
+  ✓ 綜合數據回退
 
 Available Endpoints:
   GET  /predict/available-coins
@@ -421,6 +428,9 @@ Model Management:
   TensorFlow Available: True
   HuggingFace Available: True
   Model Cache: ./models_cache
+
+V5 Coins (14): BTC, ETH, BNB, ADA, SOL, XRP, DOGE, ATOM, DOT, LTC, LINK, UNI, AVAX, XLM
+V6 Coins (16+): BTC, ETH, BNB, SOL, XRP, AVAX, DOGE, ADA, DOT, LTC, LINK, ATOM, UNI, XLM, MATIC, ARB
 
 ================================================================================
     """)
